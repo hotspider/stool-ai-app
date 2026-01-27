@@ -1,0 +1,368 @@
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:app/l10n/app_localizations.dart';
+
+import '../../core/image/image_source_service.dart';
+import '../../core/validation/basic_image_validator.dart';
+import '../../core/validation/image_validator.dart';
+import '../../design/tokens.dart';
+import '../../design/widgets/app_scaffold.dart';
+import '../../design/widgets/press_scale.dart';
+import '../../design/widgets/soft_card.dart';
+import '../models/user_inputs.dart';
+import '../models/result_payload.dart';
+import '../services/analyzer/analyzer.dart';
+import '../services/analyzer/analyzer_factory.dart';
+import '../widgets/error_state_card.dart';
+
+class PreviewPage extends StatefulWidget {
+  final ImageSelection? selection;
+
+  const PreviewPage({super.key, this.selection});
+
+  @override
+  State<PreviewPage> createState() => _PreviewPageState();
+}
+
+class _PreviewPageState extends State<PreviewPage> {
+  final ImageValidator _validator = BasicImageValidator();
+  Uint8List? _bytes;
+  bool _isValidating = false;
+  bool _isAnalyzing = false;
+  ImageValidationResult? _validation;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytes = widget.selection?.bytes;
+    if (_bytes != null) {
+      _validate();
+    }
+  }
+
+  Future<void> _validate() async {
+    if (_bytes == null) {
+      return;
+    }
+    setState(() {
+      _isValidating = true;
+    });
+    final result = await _validator.validate(_bytes!);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _validation = result;
+      _isValidating = false;
+    });
+    if (!result.ok) {
+      _showInvalidSheet(result.reason, result.message);
+    }
+  }
+
+  Future<void> _showInvalidSheet(
+    ImageValidationReason reason,
+    String message,
+  ) async {
+    final l10n = AppLocalizations.of(context)!;
+    final description = _errorDescription(reason, message);
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isDismissible: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Icon(Icons.error_outline,
+                size: 36, color: AppTokens.riskMedium),
+            const SizedBox(height: AppTokens.s12),
+            Text(l10n.previewNotTargetTitle,
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(description, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _repick(ImageSourceType.camera);
+              },
+              child: Text(l10n.previewRetake),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _repick(ImageSourceType.gallery);
+              },
+              child: Text(l10n.previewSelectAgain),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                if (mounted) {
+                  context.pop();
+                }
+              },
+              child: Text(l10n.previewCancel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _errorDescription(ImageValidationReason reason, String fallback) {
+    final l10n = AppLocalizations.of(context)!;
+    switch (reason) {
+      case ImageValidationReason.notTarget:
+        return l10n.previewNotTargetMessage;
+      case ImageValidationReason.tooBlurry:
+      case ImageValidationReason.tooDark:
+      case ImageValidationReason.tooSmall:
+        return l10n.previewBlurryMessage;
+      case ImageValidationReason.unknown:
+        return l10n.previewUnknownMessage;
+    }
+  }
+
+  Future<void> _repick(ImageSourceType source) async {
+    try {
+      final bytes = source == ImageSourceType.camera
+          ? await ImageSourceService.instance.pickFromCamera()
+          : await ImageSourceService.instance.pickFromGallery();
+      if (bytes == null) {
+        if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.previewCanceled)),
+          );
+        }
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _bytes = bytes;
+        _validation = null;
+      });
+      _validate();
+    } on ImageSourceFailure catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showPermissionSheet(source);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.previewPickFailed)),
+      );
+    }
+  }
+
+  void _showPermissionSheet(ImageSourceType source) {
+    final l10n = AppLocalizations.of(context)!;
+    final title = source == ImageSourceType.camera
+        ? l10n.permissionCameraTitle
+        : l10n.permissionGalleryTitle;
+    final message = source == ImageSourceType.camera
+        ? l10n.permissionCameraMessage
+        : l10n.permissionGalleryMessage;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(message, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                openAppSettings();
+                Navigator.of(context).pop();
+              },
+              child: Text(l10n.permissionGoSettings),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(l10n.previewCancel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startAnalyze() async {
+    if (_bytes == null || _isAnalyzing) {
+      return;
+    }
+    setState(() {
+      _isAnalyzing = true;
+    });
+    try {
+      final analyzer = AnalyzerFactory.create();
+      final result = await analyzer.analyze(
+        imageBytes: _bytes!,
+        inputs: const UserInputs(
+          odor: 'none',
+          painOrStrain: false,
+          dietKeywords: '',
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      final l10n = AppLocalizations.of(context)!;
+      final payload = ResultPayload(
+        analysis: result.analysis,
+        advice: result.advice,
+        validationWarning:
+            _validation?.weakPass == true ? l10n.previewWeakPass : null,
+      );
+      context.push('/result', extra: payload);
+    } on AnalyzerException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      final l10n = AppLocalizations.of(context)!;
+      final message = e.message == 'remote_unavailable'
+          ? l10n.remoteUnavailable
+          : l10n.resultErrorMessage;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.resultErrorMessage)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    if (_bytes == null) {
+      return AppScaffold(
+        title: l10n.previewTitle,
+        body: ErrorStateCard(
+          title: l10n.previewNoImageTitle,
+          message: l10n.previewNoImageMessage,
+          primaryLabel: l10n.previewBackHome,
+          onPrimary: () => context.go('/home'),
+        ),
+      );
+    }
+
+    final canAnalyze = _validation?.ok == true && !_isValidating && !_isAnalyzing;
+
+    return AppScaffold(
+      title: l10n.previewTitle,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SoftCard(
+            padding: EdgeInsets.zero,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppTokens.r16),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Image.memory(
+                  _bytes!,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTokens.s12),
+          if (_isValidating)
+            Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Text(l10n.previewValidating),
+              ],
+            )
+          else if (_validation?.ok == true && _validation?.weakPass == true)
+            Text(
+              l10n.previewWeakPass,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppTokens.riskMedium),
+            )
+          else if (_validation?.ok == true)
+            Text(
+              l10n.previewPass,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          const SizedBox(height: AppTokens.s24),
+          Row(
+            children: [
+              Expanded(
+                child: PressScale(
+                  child: OutlinedButton(
+                    onPressed: () => _repick(ImageSourceType.gallery),
+                    child: Text(l10n.previewRechoose),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s12),
+              Expanded(
+                child: PressScale(
+                  enabled: canAnalyze,
+                  child: FilledButton(
+                    onPressed: canAnalyze ? _startAnalyze : null,
+                    child: _isAnalyzing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(l10n.previewStartAnalyze),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTokens.s12),
+          Text(
+            l10n.previewHint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
