@@ -10,11 +10,11 @@ import 'features/app_router.dart';
 import 'features/services/storage_service.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
   FlutterError.onError = (details) {
     AppErrorHandler.handle(details.exception, details.stack);
   };
   runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
     await StorageService.init();
     runApp(const HealthApp());
   }, (error, stack) {

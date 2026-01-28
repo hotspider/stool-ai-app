@@ -37,13 +37,25 @@ echo "   VERIFY_IMG=/path/to/1.jpg $0"
 echo
 
 if [ "${VERIFY_IMG:-}" != "" ]; then
+  if [ ! -f "$VERIFY_IMG" ]; then
+    echo "VERIFY_IMG not found: $VERIFY_IMG" >&2
+    exit 1
+  fi
+  if [ ! -r "$VERIFY_IMG" ]; then
+    echo "VERIFY_IMG not readable: $VERIFY_IMG" >&2
+    exit 1
+  fi
   echo "==> analyze real image: $VERIFY_IMG"
   B64=$(python3 - <<'PY'
-import base64,sys
-p=sys.argv[1]
-print(base64.b64encode(open(p,'rb').read()).decode())
+import base64, os, sys
+p = os.environ.get("VERIFY_IMG", "")
+if not p:
+    print("")
+    sys.exit(1)
+with open(p, "rb") as f:
+    sys.stdout.write(base64.b64encode(f.read()).decode("ascii"))
 PY
-"$VERIFY_IMG")
+)
   curl -sS -D /tmp/analyze_headers_real.txt -o /tmp/analyze_body_real.json -X POST "$API_BASE/analyze" \
     -H "Content-Type: application/json" \
     -d "{\"image\":\"$B64\",\"age_months\":30,\"odor\":\"none\",\"pain_or_strain\":false,\"diet_keywords\":\"banana\"}" >/dev/null
