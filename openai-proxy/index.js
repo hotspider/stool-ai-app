@@ -5,7 +5,22 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+const PROXY_VERSION = process.env.RENDER_GIT_COMMIT || process.env.PROXY_VERSION || "dev";
+const MODEL_ALLOWLIST = new Set([
+  "gpt-5.2",
+  "gpt-5.2-pro",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "gpt-5.2-codex",
+]);
+
+function pickModel(reqBody) {
+  const envModel = (process.env.OPENAI_MODEL || "").trim();
+  const reqModel =
+    reqBody && typeof reqBody.model === "string" ? reqBody.model.trim() : "";
+  const candidate = reqModel || envModel || "gpt-5.2";
+  return MODEL_ALLOWLIST.has(candidate) ? candidate : "gpt-5.2";
+}
 
 // ===== Helpers =====
 function nowISO() {
@@ -303,7 +318,14 @@ function normalizeResult(parsed) {
 }
 
 // ===== Endpoints =====
-app.get("/ping", (_req, res) => res.json({ ok: true }));
+app.get("/ping", (_req, res) =>
+  res.json({
+    ok: true,
+    proxy_version: PROXY_VERSION,
+    schema_version: 2,
+    model: process.env.OPENAI_MODEL || "gpt-5.2",
+  })
+);
 app.get("/health", (_req, res) => res.json({ ok: true, ts: nowISO() }));
 app.get("/version", (_req, res) =>
   res.json({ ok: true, version: process.env.RENDER_GIT_COMMIT || "unknown", ts: nowISO() })
@@ -311,6 +333,11 @@ app.get("/version", (_req, res) =>
 
 app.post("/analyze", async (req, res) => {
   try {
+    const model = pickModel(req.body);
+    res.setHeader("x-proxy-version", PROXY_VERSION);
+    res.setHeader("schema_version", "2");
+    res.setHeader("x-openai-model", model);
+
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({
@@ -331,7 +358,7 @@ app.post("/analyze", async (req, res) => {
     }
 
     const payload = {
-      model: DEFAULT_MODEL,
+      model,
       input: [
         {
           role: "system",
@@ -350,7 +377,7 @@ app.post("/analyze", async (req, res) => {
       max_output_tokens: 1000
     };
 
-    console.log(`[OPENAI] request model=${DEFAULT_MODEL} text.format=json_object`);
+    console.log(`[OPENAI] request model=${model} text.format=json_object`);
     const r = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -380,6 +407,7 @@ app.post("/analyze", async (req, res) => {
     }
 
     const normalized = normalizeResult(parsed);
+    res.setHeader("schema_version", String(normalized.schema_version || 2));
     return res.json(normalized);
   } catch (err) {
     console.error("proxy /analyze error", err);

@@ -167,7 +167,7 @@ Future<http.Response> _postJsonWithRetry(
     try {
       final resp = await http
           .post(url, headers: headers, body: body)
-          .timeout(const Duration(seconds: 60));
+          .timeout(const Duration(seconds: 45));
       if ((resp.statusCode == 502 || resp.statusCode == 503) &&
           attempt < maxAttempts) {
         throw HttpException('retryable_${resp.statusCode}');

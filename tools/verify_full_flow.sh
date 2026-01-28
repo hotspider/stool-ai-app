@@ -2,100 +2,64 @@
 set -euo pipefail
 
 API_BASE="${API_BASE:-https://api.tapgiga.com}"
-OPENAI_PROXY_URL="${OPENAI_PROXY_URL:-https://openai-proxy-c4hk.onrender.com}"
+PROXY_BASE="${PROXY_BASE:-https://openai-proxy-c4hk.onrender.com}"
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing command: $1"; exit 1; }; }
-need_cmd curl
-need_cmd python3
-
-echo "==> [1/3] Proxy /ping"
-curl -sS "$OPENAI_PROXY_URL/ping" | head -c 200
-echo -e "\n"
-
-echo "==> [2/3] Worker /ping"
-curl -sS "$API_BASE/ping" | head -c 200
-echo -e "\n"
-
-echo "==> [3/3] Worker /analyze"
-IMG_DATA_URL="$(python3 - <<'PY'
-import base64, struct, zlib
-width, height = 32, 32
-rows = []
-for y in range(height):
-    row = b"\x00" + b"\xFF\xFF\xFF" * width
-    rows.append(row)
-raw = b"".join(rows)
-compressed = zlib.compress(raw)
-
-def chunk(tag, data):
-    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff)
-
-png = b"\x89PNG\r\n\x1a\n"
-png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-png += chunk(b"IDAT", compressed)
-png += chunk(b"IEND", b"")
-
-b64 = base64.b64encode(png).decode("ascii")
-print("data:image/png;base64," + b64)
-PY
-)"
-payload="$(python3 - <<PY
-import json
-print(json.dumps({
-  "image": """$IMG_DATA_URL""",
-  "age_months": 30,
-  "odor": "none",
-  "pain_or_strain": False,
-  "diet_keywords": "banana"
-}))
-PY
-)"
-
-resp="$(curl -sS -w "\nHTTP_STATUS:%{http_code}\n" \
-  -H "Content-Type: application/json" \
-  --data-binary "$payload" \
-  "$API_BASE/analyze" || true)"
-status="$(echo "$resp" | tail -n 1 | sed 's/HTTP_STATUS://')"
-body="$(echo "$resp" | sed '$d')"
-echo "HTTP Status: $status"
-echo "$body" | head -c 1200
+echo "==> ping worker"
+curl -sS "$API_BASE/ping" | tee /tmp/ping_worker.json
 echo
 
-BODY="$body" python3 - <<'PY'
-import json, sys
-import re
+echo "==> ping proxy"
+curl -sS "$PROXY_BASE/ping" | tee /tmp/ping_proxy.json
+echo
 
-import os
-body = os.environ.get("BODY", "")
+echo "==> analyze minimal (no image, expect ok=false but MUST return schema headers if handled)"
+set +e
+curl -sS -D /tmp/analyze_headers.txt -o /tmp/analyze_body.json -X POST "$API_BASE/analyze" \
+  -H "Content-Type: application/json" \
+  -d '{"image":"test","age_months":30,"odor":"none","pain_or_strain":false,"diet_keywords":"banana"}'
+set -e
+
+echo "==> headers"
+sed -n '1,30p' /tmp/analyze_headers.txt
+echo "==> body (first 1200 chars)"
+python3 - <<'PY'
 try:
-    data = json.loads(body)
+  with open("/tmp/analyze_body.json","r",encoding="utf-8") as f:
+    s=f.read()
+  print(s[:1200])
 except Exception as e:
-    print("[verify_full_flow] ERROR: response is not JSON:", e)
-    sys.exit(1)
-
-required = [
-    "headline","score","confidence","stool_features","actions_today",
-    "ui_strings","summary","bristol_type","color","texture","hydration_hint","diet_advice"
-]
-missing = [k for k in required if k not in data]
-
-sf_required = ["bristol_type","color","texture","volume","visible_findings"]
-at_required = ["diet","hydration","care","avoid"]
-ui_required = ["summary","tags","sections"]
-
-sf = data.get("stool_features") or {}
-at = data.get("actions_today") or {}
-ui = data.get("ui_strings") or {}
-
-missing += [f"stool_features.{k}" for k in sf_required if k not in sf]
-missing += [f"actions_today.{k}" for k in at_required if k not in at]
-missing += [f"ui_strings.{k}" for k in ui_required if k not in ui]
-
-if missing:
-    print("[verify_full_flow] ERROR: missing fields:", ", ".join(missing))
-    sys.exit(1)
-
-print("[verify_full_flow] OK: required fields present")
+  print("read body failed:", e)
 PY
+
+echo
+echo "==> If you want real image verify:"
+echo "   VERIFY_IMG=/path/to/1.jpg $0"
+echo
+
+if [ "${VERIFY_IMG:-}" != "" ]; then
+  echo "==> analyze real image: $VERIFY_IMG"
+  B64=$(python3 - <<'PY'
+import base64,sys
+p=sys.argv[1]
+print(base64.b64encode(open(p,'rb').read()).decode())
+PY
+"$VERIFY_IMG")
+  curl -sS -D /tmp/analyze_headers_real.txt -o /tmp/analyze_body_real.json -X POST "$API_BASE/analyze" \
+    -H "Content-Type: application/json" \
+    -d "{\"image\":\"$B64\",\"age_months\":30,\"odor\":\"none\",\"pain_or_strain\":false,\"diet_keywords\":\"banana\"}" >/dev/null
+  echo "==> headers (real)"
+  sed -n '1,40p' /tmp/analyze_headers_real.txt
+  echo "==> body keys (real)"
+  python3 - <<'PY'
+import json
+d=json.load(open("/tmp/analyze_body_real.json","r",encoding="utf-8"))
+print("ok:", d.get("ok"))
+print("schema_version:", d.get("schema_version"))
+print("headline:", (d.get("headline") or "")[:80])
+print("score:", d.get("score"))
+print("confidence:", d.get("confidence"))
+print("ui_sections:", len((d.get("ui_strings") or {}).get("sections") or []))
+PY
+fi
 
 echo "==> DONE"

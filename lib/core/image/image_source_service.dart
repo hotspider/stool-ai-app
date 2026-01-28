@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import '../../features/services/image_crop_service.dart';
 
 enum ImageSourceFailureReason { permissionDenied, unavailable }
 
@@ -34,15 +37,18 @@ class ImageSourceService {
     if (!status.isGranted) {
       throw const ImageSourceFailure(ImageSourceFailureReason.permissionDenied);
     }
-    final file = await _picker.pickImage(
+    final picked = await _picker.pickImage(
       source: ImageSource.camera,
       maxWidth: 2000,
       maxHeight: 2000,
       imageQuality: 85,
     );
-    if (file == null) {
+    if (picked == null) {
       return null;
     }
+    final original = File(picked.path);
+    final cropped = await ImageCropService.crop(original);
+    final file = cropped ?? original;
     return file.readAsBytes();
   }
 
@@ -51,15 +57,18 @@ class ImageSourceService {
     if (!status.isGranted) {
       throw const ImageSourceFailure(ImageSourceFailureReason.permissionDenied);
     }
-    final file = await _picker.pickImage(
+    final picked = await _picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 2000,
       maxHeight: 2000,
       imageQuality: 85,
     );
-    if (file == null) {
+    if (picked == null) {
       return null;
     }
+    final original = File(picked.path);
+    final cropped = await ImageCropService.crop(original);
+    final file = cropped ?? original;
     return file.readAsBytes();
   }
 
