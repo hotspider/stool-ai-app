@@ -2,15 +2,18 @@ import 'dart:typed_data';
 
 import '../../models/advice_response.dart';
 import '../../models/analyze_response.dart';
+import '../../models/stool_analysis_result.dart';
 import '../../models/user_inputs.dart';
 
 class AnalyzeResult {
   final AnalyzeResponse analysis;
   final AdviceResponse advice;
+  final StoolAnalysisParseResult? structured;
 
   const AnalyzeResult({
     required this.analysis,
     required this.advice,
+    this.structured,
   });
 }
 

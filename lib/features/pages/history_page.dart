@@ -255,7 +255,7 @@ class _HistoryItem extends StatelessWidget {
                   const SizedBox(height: AppSpace.s8),
                   Text(
                     l10n.historyItemMeta(
-                      record.analysis.bristolType,
+                      record.analysis.bristolType ?? l10n.colorUnknown,
                       record.analysis.qualityScore,
                     ),
                     style: AppText.caption,

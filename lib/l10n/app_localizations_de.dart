@@ -261,6 +261,35 @@ class AppLocalizationsDe extends AppLocalizations {
   String get resultActionsTitle => 'Next steps';
 
   @override
+  String get resultInsightsTitle => 'Key insights';
+
+  @override
+  String get resultActionsTodayTitle => 'Today\'s actions';
+
+  @override
+  String get resultRedFlagsTitle => 'Red flags';
+
+  @override
+  String get resultFollowUpTitle => 'Follow-up questions';
+
+  @override
+  String get resultInsufficientMessage => 'Unrecognized / insufficient info.';
+
+  @override
+  String get resultActionsDiet => 'Diet';
+
+  @override
+  String get resultActionsHydration => 'Hydration';
+
+  @override
+  String get resultActionsCare => 'Care';
+
+  @override
+  String get resultActionsObserve => 'Observe (next 24h)';
+  @override
+  String get resultActionsAvoid => 'Avoid';
+
+  @override
   String get resultActionsEmpty => 'No suggestions';
 
   @override

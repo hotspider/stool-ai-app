@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
 # ===== 可改配置区（只改这里）=====
 WORKER_DIR="${WORKER_DIR:-$HOME/stool-ai-worker}"
 WORKER_NAME="${WORKER_NAME:-stool-ai-worker}"
@@ -48,56 +50,12 @@ fi
 echo
 
 # 3) 部署 Worker
-echo "==> [3/6] Deploying Worker..."
+echo "==> [3/4] Deploying Worker..."
 npx wrangler deploy
 echo
 
-# 4) 验证 /ping
-echo "==> [4/6] Verify Worker /ping -> $API_BASE/ping"
-curl -sS -v "$API_BASE/ping" 2>&1 | tail -n 30
-echo -e "\n"
-
-# 5) 验证 /analyze（JSON test）
-echo "==> [5/6] Verify /analyze JSON test (no image)"
-curl -sS -X POST "$API_BASE/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{"image":"test","age_months":30,"odor":"none","pain_or_strain":false,"diet_keywords":"banana"}' \
-  | head -c 1200
-echo -e "\n"
-
-# 6) 如果给了图片路径，就做“真实 base64 图片”验证，并打印前 4000 字符
-if [[ -n "$VERIFY_IMG" ]]; then
-  if [[ ! -f "$VERIFY_IMG" ]]; then
-    echo "VERIFY_IMG not found: $VERIFY_IMG"
-    exit 1
-  fi
-
-  echo "==> [6/6] Verify /analyze with REAL image base64: $VERIFY_IMG"
-  b64="$(python3 - <<PY
-import base64
-p=r"""$VERIFY_IMG"""
-with open(p,'rb') as f:
-    print(base64.b64encode(f.read()).decode())
-PY
-)"
-  payload="$(python3 - <<PY
-import json
-print(json.dumps({
-  "image": """$b64""",
-  "age_months": 30,
-  "odor": "none",
-  "pain_or_strain": False,
-  "diet_keywords": "banana"
-}, ensure_ascii=False))
-PY
-)"
-  curl -sS -X POST "$API_BASE/analyze" \
-    -H "Content-Type: application/json" \
-    --data-binary "$payload" \
-    | head -c 4000
-  echo -e "\n"
-else
-  echo "==> [6/6] Skipped real image verify (set VERIFY_IMG=/path/to/1.jpg)"
-fi
-
-echo "==> DONE"
+# 4) 调用全链路验证
+echo "==> [4/4] Running full-flow verification"
+cd "$ROOT_DIR"
+API_BASE="$API_BASE" OPENAI_PROXY_URL="$OPENAI_PROXY_URL" \
+  ./tools/verify_full_flow.sh

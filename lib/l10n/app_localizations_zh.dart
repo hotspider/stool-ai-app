@@ -253,6 +253,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get resultActionsTitle => '下一步建议';
 
   @override
+  String get resultInsightsTitle => '解释点';
+
+  @override
+  String get resultActionsTodayTitle => '今日行动清单';
+
+  @override
+  String get resultRedFlagsTitle => '红旗预警';
+
+  @override
+  String get resultFollowUpTitle => '追问问题';
+
+  @override
+  String get resultInsufficientMessage => '未识别/信息不足';
+
+  @override
+  String get resultActionsDiet => '饮食';
+
+  @override
+  String get resultActionsHydration => '补液';
+
+  @override
+  String get resultActionsCare => '护理';
+
+  @override
+  String get resultActionsObserve => '观察（未来24小时）';
+  @override
+  String get resultActionsAvoid => '今日避免';
+
+  @override
   String get resultActionsEmpty => '暂无建议';
 
   @override

@@ -46,9 +46,18 @@ class PdfExportService {
           pw.SizedBox(height: 14),
           _sectionTitle(l10n.pdfKeyTraitsTitle),
           _card([
-            _kv(l10n.pdfBristolLabel, '${record.analysis.bristolType}'),
-            _kv(l10n.pdfColorLabel, _safeText(l10n, _colorLabel(l10n, record.analysis.color.name))),
-            _kv(l10n.pdfTextureLabel, _safeText(l10n, _textureLabel(l10n, record.analysis.texture.name))),
+            _kv(
+              l10n.pdfBristolLabel,
+              record.analysis.bristolType?.toString() ?? l10n.colorUnknown,
+            ),
+            _kv(
+              l10n.pdfColorLabel,
+              _safeText(l10n, _colorLabel(l10n, record.analysis.color.name)),
+            ),
+            _kv(
+              l10n.pdfTextureLabel,
+              _safeText(l10n, _textureLabel(l10n, record.analysis.texture.name)),
+            ),
           ]),
 
           pw.SizedBox(height: 14),

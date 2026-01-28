@@ -586,6 +586,66 @@ abstract class AppLocalizations {
   /// **'Next steps'**
   String get resultActionsTitle;
 
+  /// No description provided for @resultInsightsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Key insights'**
+  String get resultInsightsTitle;
+
+  /// No description provided for @resultActionsTodayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Today\'s actions'**
+  String get resultActionsTodayTitle;
+
+  /// No description provided for @resultRedFlagsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Red flags'**
+  String get resultRedFlagsTitle;
+
+  /// No description provided for @resultFollowUpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow-up questions'**
+  String get resultFollowUpTitle;
+
+  /// No description provided for @resultInsufficientMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Unrecognized / insufficient info.'**
+  String get resultInsufficientMessage;
+
+  /// No description provided for @resultActionsDiet.
+  ///
+  /// In en, this message translates to:
+  /// **'Diet'**
+  String get resultActionsDiet;
+
+  /// No description provided for @resultActionsHydration.
+  ///
+  /// In en, this message translates to:
+  /// **'Hydration'**
+  String get resultActionsHydration;
+
+  /// No description provided for @resultActionsCare.
+  ///
+  /// In en, this message translates to:
+  /// **'Care'**
+  String get resultActionsCare;
+
+  /// No description provided for @resultActionsObserve.
+  ///
+  /// In en, this message translates to:
+  /// **'Observe (next 24h)'**
+  String get resultActionsObserve;
+
+  /// No description provided for @resultActionsAvoid.
+  ///
+  /// In en, this message translates to:
+  /// **'Avoid'**
+  String get resultActionsAvoid;
+
   /// No description provided for @resultActionsEmpty.
   ///
   /// In en, this message translates to:

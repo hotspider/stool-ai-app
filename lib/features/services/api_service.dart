@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../models/advice_response.dart';
 import '../models/analyze_response.dart';
 import '../models/result_payload.dart';
+import '../models/stool_analysis_result.dart';
 import 'mock_generator.dart';
 
 class ApiService {
@@ -74,12 +75,42 @@ class ApiService {
         throw ApiServiceException(ApiServiceErrorCode.remoteError, message);
       }
 
-      final analysisJson = body['stage1'] is Map<String, dynamic>
-          ? body['stage1'] as Map<String, dynamic>
-          : <String, dynamic>{};
-      final adviceJson = body['stage2'] is Map<String, dynamic>
-          ? body['stage2'] as Map<String, dynamic>
-          : <String, dynamic>{};
+      final parsed = StoolAnalysisResult.parse(body);
+      if (parsed.missing.isNotEmpty) {
+        debugPrint(
+          '[ApiService] missing fields: ${parsed.missing.join(', ')}',
+        );
+      }
+      final result = parsed.result;
+      final redFlags = result.redFlags
+          .map((item) => '${item.title} ${item.detail}'.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+
+      final analysisJson = <String, dynamic>{
+        'riskLevel': result.riskLevel,
+        'summary': result.summary,
+        'bristolType': result.bristolType,
+        'color': result.color,
+        'texture': result.texture,
+        'suspiciousSignals': redFlags,
+        'qualityScore': result.score,
+        'qualityIssues': result.reasoningBullets,
+        'analyzedAt': DateTime.now().toIso8601String(),
+      };
+      final adviceJson = <String, dynamic>{
+        'summary': result.headline,
+        'next48hActions': [
+          ...result.actionsToday.diet,
+          ...result.actionsToday.hydration,
+          ...result.actionsToday.care,
+          ...result.actionsToday.avoid,
+        ],
+        'seekCareIf': redFlags,
+        'disclaimers': result.uncertaintyNote.isEmpty
+            ? const []
+            : [result.uncertaintyNote],
+      };
 
       return ResultPayload(
         analysis: AnalyzeResponse.fromJson(analysisJson),

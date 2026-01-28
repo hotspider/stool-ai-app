@@ -7,7 +7,7 @@ enum StoolTexture { watery, mushy, normal, hard, oily, foamy, unknown }
 class AnalyzeResponse {
   final RiskLevel riskLevel;
   final String summary;
-  final int bristolType;
+  final int? bristolType;
   final StoolColor color;
   final StoolTexture texture;
   final List<String> suspiciousSignals;
@@ -31,7 +31,7 @@ class AnalyzeResponse {
     return AnalyzeResponse(
       riskLevel: RiskLevel.low,
       summary: '',
-      bristolType: 3,
+      bristolType: null,
       color: StoolColor.unknown,
       texture: StoolTexture.unknown,
       suspiciousSignals: const [],
@@ -58,7 +58,7 @@ class AnalyzeResponse {
   factory AnalyzeResponse.fromJson(Map<String, dynamic> json) {
     final riskLevel = _parseRiskLevel(json['riskLevel']);
     final summary = json['summary']?.toString() ?? '';
-    final bristolType = _clampInt(json['bristolType'], min: 1, max: 7, fallback: 3);
+    final bristolType = _optionalClampInt(json['bristolType'], min: 1, max: 7);
     final color = _parseColor(json['color']);
     final texture = _parseTexture(json['texture']);
     final suspiciousSignals = _stringList(
@@ -147,6 +147,21 @@ class AnalyzeResponse {
     final parsed = int.tryParse(value?.toString() ?? '');
     if (parsed == null) {
       return fallback;
+    }
+    if (parsed < min) {
+      return min;
+    }
+    if (parsed > max) {
+      return max;
+    }
+    return parsed;
+  }
+
+  static int? _optionalClampInt(Object? value,
+      {required int min, required int max}) {
+    final parsed = int.tryParse(value?.toString() ?? '');
+    if (parsed == null) {
+      return null;
     }
     if (parsed < min) {
       return min;

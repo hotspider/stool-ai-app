@@ -91,7 +91,9 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
             children: [
               _MetricChip(
                 label: l10n.resultMetricBristol,
-                value: l10n.resultBristolValue(record.analysis.bristolType),
+                value: record.analysis.bristolType == null
+                    ? l10n.colorUnknown
+                    : l10n.resultBristolValue(record.analysis.bristolType!),
               ),
               _MetricChip(
                 label: l10n.resultMetricColor,

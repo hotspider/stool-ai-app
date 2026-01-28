@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
@@ -20,6 +21,7 @@ import '../../design/components/secondary_button.dart';
 import '../models/advice_response.dart';
 import '../models/analyze_response.dart';
 import '../models/record.dart';
+import '../models/stool_analysis_result.dart';
 import '../models/user_inputs.dart';
 import '../services/pdf_export_service.dart';
 import '../services/storage_service.dart';
@@ -57,6 +59,7 @@ class _ResultPageState extends State<ResultPage> {
 
   AnalyzeResponse? _analysis;
   AdviceResponse? _advice;
+  StoolAnalysisParseResult? _structured;
   List<bool> _checks = [];
   DateTime? _analyzedAt;
   bool _isAnalyzing = false;
@@ -90,6 +93,7 @@ class _ResultPageState extends State<ResultPage> {
       _isAnalyzing = true;
       _analysis = null;
       _advice = null;
+      _structured = null;
       _checks = [];
       _adviceUpdated = false;
       _hasError = false;
@@ -138,6 +142,7 @@ class _ResultPageState extends State<ResultPage> {
         setState(() {
           _analysis = analysis;
           _advice = precomputedAdvice;
+          _structured = null;
           _checks =
               List<bool>.filled(precomputedAdvice.next48hActions.length, false);
           _analyzedAt = analysis.analyzedAt;
@@ -164,6 +169,7 @@ class _ResultPageState extends State<ResultPage> {
       setState(() {
         _analysis = resolved;
         _advice = advice;
+        _structured = result.structured;
         _checks = List<bool>.filled(advice.next48hActions.length, false);
         _analyzedAt = resolved.analyzedAt;
         _isAnalyzing = false;
@@ -173,6 +179,11 @@ class _ResultPageState extends State<ResultPage> {
           LoadingStepItem(label: l10n.loadingStepAdvice, status: LoadingStepStatus.done),
         ];
       });
+      if (result.structured?.missing.isNotEmpty == true) {
+        debugPrint(
+          '[ResultPage] structured missing: ${result.structured!.missing.join(', ')}',
+        );
+      }
     } on AnalyzerException catch (_) {
       if (!mounted) {
         return;
@@ -341,6 +352,8 @@ class _ResultPageState extends State<ResultPage> {
     final l10n = AppLocalizations.of(context)!;
     final analysis = _analysis;
     final advice = _advice;
+    final structured = _structured?.result;
+    final canUseResult = structured != null && structured.ok;
 
     return AppScaffold(
       title: l10n.resultTitle,
@@ -361,13 +374,24 @@ class _ResultPageState extends State<ResultPage> {
               )
             else if (_isAnalyzing || analysis == null || advice == null)
               LoadingSteps(steps: _steps)
-            else ...[
+            else if (structured == null || !structured.ok) ...[
+              SoftCard(
+                child: Text(
+                  l10n.resultInsufficientMessage,
+                  style: AppText.body,
+                ),
+              ),
+            ] else ...[
               AnimatedEntry(
                 child: _SummaryCard(
-                  riskLevel: analysis.riskLevel,
-                  riskLabel: _riskLabel(l10n, analysis.riskLevel),
-                  riskDescription: _riskDescription(analysis.riskLevel.name),
-                  riskColor: _riskColor(analysis.riskLevel.name),
+                  riskLevel: _riskLevelFromString(structured.riskLevel),
+                  riskLabel: _riskLabel(l10n, _riskLevelFromString(structured.riskLevel)),
+                  riskDescription: _riskDescription(structured.riskLevel),
+                  riskColor: _riskColor(structured.riskLevel),
+                  headline: structured.headline,
+                  summary: structured.uiStrings.summary.isEmpty
+                      ? structured.summary
+                      : structured.uiStrings.summary,
                   warning: widget.validationWarning,
                 ),
               ),
@@ -378,51 +402,99 @@ class _ResultPageState extends State<ResultPage> {
                 children: [
                   _MetricChip(
                     label: l10n.resultMetricBristol,
-                    value: l10n.resultBristolValue(analysis.bristolType),
+                    value: structured.stoolFeatures.bristolType == null
+                        ? l10n.resultInsufficientMessage
+                        : l10n.resultBristolValue(structured.stoolFeatures.bristolType!),
                   ),
                   _MetricChip(
                     label: l10n.resultMetricColor,
-                    value: _colorLabel(analysis.color),
+                    value: _featureLabelOrUnknown(
+                      l10n,
+                      structured.stoolFeatures.color,
+                    ),
                   ),
                   _MetricChip(
                     label: l10n.resultMetricTexture,
-                    value: _textureLabel(analysis.texture),
+                    value: _featureLabelOrUnknown(
+                      l10n,
+                      structured.stoolFeatures.texture,
+                    ),
                   ),
                   _MetricChip(
                     label: l10n.resultMetricScore,
-                    value: '${analysis.qualityScore}/100',
+                    value: '${_resolveScore(structured)}/100',
+                  ),
+                  ...structured.uiStrings.tags.map(
+                    (chip) => Chip(label: Text(chip, style: AppText.caption)),
                   ),
                 ],
               ),
               const SizedBox(height: AppSpace.s20),
-              SectionHeader(title: l10n.resultActionsTitle),
+              SectionHeader(title: l10n.resultInsightsTitle),
               const SizedBox(height: AppSpace.s12),
               SoftCard(
-                child: advice.next48hActions.isEmpty
-                    ? Text(l10n.resultActionsEmpty, style: AppText.caption)
+                child: _BulletList(items: structured.reasoningBullets),
+              ),
+              const SizedBox(height: AppSpace.s16),
+              SectionHeader(title: l10n.resultActionsTodayTitle),
+              const SizedBox(height: AppSpace.s12),
+              SoftCard(
+                child: structured.uiStrings.sections.isNotEmpty
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: structured.uiStrings.sections
+                            .map(
+                              (section) => Padding(
+                                padding: const EdgeInsets.only(bottom: AppSpace.s12),
+                                child: _ActionSection(
+                                  title: section.title,
+                                  items: section.items,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      )
                     : Column(
-                        children: List.generate(
-                          advice.next48hActions.length,
-                          (index) => _ChecklistRow(
-                            title: advice.next48hActions[index],
-                            checked: _checks[index],
-                            onChanged: (value) {
-                              setState(() {
-                                _checks[index] = value;
-                              });
-                            },
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _ActionSection(
+                            title: l10n.resultActionsDiet,
+                            items: structured.actionsToday.diet,
                           ),
-                        ),
+                          const SizedBox(height: AppSpace.s12),
+                          _ActionSection(
+                            title: l10n.resultActionsHydration,
+                            items: structured.actionsToday.hydration,
+                          ),
+                          const SizedBox(height: AppSpace.s12),
+                          _ActionSection(
+                            title: l10n.resultActionsCare,
+                            items: structured.actionsToday.care,
+                          ),
+                          const SizedBox(height: AppSpace.s12),
+                          _ActionSection(
+                            title: l10n.resultActionsAvoid,
+                            items: structured.actionsToday.avoid,
+                          ),
+                        ],
                       ),
               ),
-              if (_shouldShowWarning(analysis, advice)) ...[
-                const SizedBox(height: AppSpace.s16),
-                _WarningCard(
-                  title: l10n.resultWarningTitle,
-                  items: _warningItems(analysis, advice, l10n),
-                  hint: l10n.resultWarningHint,
-                ),
-              ],
+              const SizedBox(height: AppSpace.s16),
+              SectionHeader(title: l10n.resultRedFlagsTitle),
+              const SizedBox(height: AppSpace.s12),
+              _WarningCard(
+                title: l10n.resultRedFlagsTitle,
+                items: structured.redFlags
+                    .map((item) => '${item.title} ${item.detail}'.trim())
+                    .toList(),
+                hint: l10n.resultWarningHint,
+              ),
+              const SizedBox(height: AppSpace.s16),
+              SectionHeader(title: l10n.resultFollowUpTitle),
+              const SizedBox(height: AppSpace.s12),
+              SoftCard(
+                child: _BulletList(items: structured.followUpQuestions),
+              ),
               const SizedBox(height: AppSpace.s16),
               SectionHeader(title: l10n.resultExtraTitle),
               const SizedBox(height: AppSpace.s12),
@@ -432,8 +504,7 @@ class _ResultPageState extends State<ResultPage> {
                   children: [
                     DropdownButtonFormField<String>(
                       value: _odor,
-                      decoration:
-                          InputDecoration(labelText: l10n.resultOdorLabel),
+                      decoration: InputDecoration(labelText: l10n.resultOdorLabel),
                       items: _odorOptions
                           .map(
                             (value) => DropdownMenuItem<String>(
@@ -490,9 +561,9 @@ class _ResultPageState extends State<ResultPage> {
               ),
               const SizedBox(height: AppSpace.s12),
               Text(
-                advice.disclaimers.isEmpty
+                structured.uncertaintyNote.isEmpty
                     ? l10n.resultDisclaimersDefault
-                    : advice.disclaimers.join('、'),
+                    : structured.uncertaintyNote,
                 style: AppText.caption,
               ),
             ],
@@ -512,7 +583,7 @@ class _ResultPageState extends State<ResultPage> {
               Expanded(
                 child: SecondaryButton(
                   label: l10n.exportPdfTooltip,
-                  onPressed: _isAnalyzing || _isSaving || _isExporting
+                  onPressed: _isAnalyzing || _isSaving || _isExporting || !canUseResult
                       ? null
                       : _exportPdfFromResult,
                   loading: _isExporting,
@@ -522,7 +593,9 @@ class _ResultPageState extends State<ResultPage> {
               Expanded(
                 child: PrimaryButton(
                   label: l10n.resultSave,
-                  onPressed: _isAnalyzing || _isSaving ? null : _saveRecord,
+                  onPressed: _isAnalyzing || _isSaving || !canUseResult
+                      ? null
+                      : _saveRecord,
                   loading: _isSaving,
                 ),
               ),
@@ -595,30 +668,6 @@ class _ResultPageState extends State<ResultPage> {
     }
   }
 
-  bool _shouldShowWarning(AnalyzeResponse analysis, AdviceResponse advice) {
-    return analysis.riskLevel == RiskLevel.high ||
-        advice.seekCareIf.isNotEmpty ||
-        analysis.suspiciousSignals.isNotEmpty;
-  }
-
-  List<String> _warningItems(
-    AnalyzeResponse analysis,
-    AdviceResponse advice,
-    AppLocalizations l10n,
-  ) {
-    final items = <String>[];
-    if (analysis.suspiciousSignals.isNotEmpty) {
-      items.addAll(analysis.suspiciousSignals);
-    }
-    if (advice.seekCareIf.isNotEmpty) {
-      items.addAll(advice.seekCareIf);
-    }
-    if (items.isEmpty) {
-      items.add(l10n.resultWarningHint);
-    }
-    return items;
-  }
-
   String _riskLabel(AppLocalizations l10n, RiskLevel level) {
     switch (level) {
       case RiskLevel.high:
@@ -629,6 +678,73 @@ class _ResultPageState extends State<ResultPage> {
         return l10n.riskLowLabel;
     }
   }
+
+  RiskLevel _riskLevelFromString(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'high':
+        return RiskLevel.high;
+      case 'medium':
+        return RiskLevel.medium;
+      default:
+        return RiskLevel.low;
+    }
+  }
+
+  int _resolveScore(StoolAnalysisResult structured) {
+    final score = structured.score;
+    if (score != null) {
+      return score.clamp(0, 100);
+    }
+    return _fallbackScore(structured);
+  }
+
+  int _fallbackScore(StoolAnalysisResult structured) {
+    var score = 85;
+
+    final bristol = structured.stoolFeatures.bristolType;
+    if (bristol != null) {
+      if (bristol == 3 || bristol == 4) {
+        score += 8;
+      } else if (bristol == 5) {
+        score += 3;
+      } else if (bristol == 6) {
+        score -= 8;
+      } else if (bristol == 7) {
+        score -= 15;
+      } else if (bristol == 1 || bristol == 2) {
+        score -= 12;
+      }
+    }
+
+    final colorTag = (structured.stoolFeatures.color ?? '').toLowerCase();
+    if (colorTag == 'black' || colorTag == 'red' || colorTag == 'white_gray') {
+      score -= 35;
+    } else if (colorTag == 'green') {
+      score -= 6;
+    }
+
+    final findings = structured.stoolFeatures.visibleFindings.map((e) => e.toLowerCase()).toList();
+    if (findings.contains('blood')) {
+      score -= 40;
+    }
+    if (findings.contains('mucus')) {
+      score -= 15;
+    }
+
+    if (_painOrStrain) {
+      score -= 10;
+    }
+
+    return score.clamp(0, 100);
+  }
+
+  String _featureLabelOrUnknown(AppLocalizations l10n, String? value) {
+    if (value == null) {
+      return l10n.colorUnknown;
+    }
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? l10n.colorUnknown : trimmed;
+  }
 }
 
 class _SummaryCard extends StatelessWidget {
@@ -636,6 +752,8 @@ class _SummaryCard extends StatelessWidget {
   final String riskLabel;
   final String riskDescription;
   final Color riskColor;
+  final String headline;
+  final String summary;
   final String? warning;
 
   const _SummaryCard({
@@ -643,6 +761,8 @@ class _SummaryCard extends StatelessWidget {
     required this.riskLabel,
     required this.riskDescription,
     required this.riskColor,
+    required this.headline,
+    required this.summary,
     this.warning,
   });
 
@@ -670,7 +790,11 @@ class _SummaryCard extends StatelessWidget {
               children: [
                 Text(riskLabel, style: AppText.title),
                 const SizedBox(height: AppSpace.s8),
-                Text(riskDescription, style: AppText.body),
+                Text(headline, style: AppText.section),
+                const SizedBox(height: AppSpace.s6),
+                Text(summary, style: AppText.body),
+                const SizedBox(height: AppSpace.s6),
+                Text(riskDescription, style: AppText.caption),
                 if (warning != null) ...[
                   const SizedBox(height: AppSpace.s8),
                   Text(
@@ -736,6 +860,52 @@ class _ChecklistRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _BulletList extends StatelessWidget {
+  final List<String> items;
+
+  const _BulletList({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items
+          .map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: AppSpace.s8),
+              child: Text('• $item', style: AppText.body),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _ActionSection extends StatelessWidget {
+  final String title;
+  final List<String> items;
+
+  const _ActionSection({
+    required this.title,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: AppText.section),
+        const SizedBox(height: AppSpace.s6),
+        _BulletList(items: items),
+      ],
     );
   }
 }

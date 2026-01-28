@@ -23,6 +23,7 @@ class AppRadius {
 }
 
 class AppSpace {
+  static const double s6 = 6;
   static const double s8 = 8;
   static const double s12 = 12;
   static const double s16 = 16;
@@ -82,6 +83,7 @@ class AppTokens {
   static const double r12 = AppRadius.r12;
   static const double r24 = AppRadius.r24;
 
+  static const double s6 = AppSpace.s6;
   static const double s8 = AppSpace.s8;
   static const double s12 = AppSpace.s12;
   static const double s16 = AppSpace.s16;
