@@ -48,9 +48,25 @@ const SYSTEM_PROMPT = `
 输出结构必须包含所有字段（允许 null/""/[] 但字段必须存在），且不要输出任何未列出的字段。
 请尽量提供“家长可执行”的饮食/补液/护理/观察建议，并提供红旗预警。
 
+You MUST output valid JSON object with schema_version=2 and the following fields:
+headline (string),
+score (0-100 int),
+confidence (0-1 float),
+uncertainty_note (string),
+stool_features (object: bristol_type int|null, color string|null, texture string|null, visible_findings string[]),
+reasoning_bullets (string[] length >= 5),
+actions_today (string[] length >= 8, each is actionable and specific),
+red_flags (string[] length >= 5, include pediatric red flags even if low risk),
+follow_up_questions (string[] length >= 6),
+ui_strings (object with sections: array of {title, icon_key, bullets[]} length >= 4).
+
+Do NOT omit fields. If uncertain, fill with safe defaults and explain in uncertainty_note.
+App 结果页“自然变厚”：每个 section 都有多条 bullet，不再像一句 summary。
+
 必须输出的 JSON 结构如下：
 {
   "ok": true,
+  "schema_version": 2,
   "headline": "一句话结论",
   "score": 0-100,
   "risk_level": "low|medium|high",
@@ -63,33 +79,26 @@ const SYSTEM_PROMPT = `
     "volume": "small|medium|large|unknown",
     "visible_findings": ["mucus","undigested_food","blood","foam","watery","seeds","none"]
   },
-  "reasoning_bullets": ["要点1","要点2","要点3"],
-  "actions_today": {
-    "diet": ["饮食建议"],
-    "hydration": ["补液建议"],
-    "care": ["护理建议"],
-    "avoid": ["避免事项"]
-  },
-  "red_flags": [
-    {"title":"何时需要就医/警戒","detail":"清晰阈值描述"}
-  ],
-  "follow_up_questions": ["可补充信息1","2"],
+  "reasoning_bullets": ["要点1","要点2","要点3","要点4","要点5"],
+  "actions_today": ["具体行动1","2","3","4","5","6","7","8"],
+  "red_flags": ["红旗1","2","3","4","5"],
+  "follow_up_questions": ["问诊1","2","3","4","5","6"],
   "ui_strings": {
     "summary": "2-3句总结",
     "tags": ["Bristol 6","黄色","偏稀"],
     "sections": [
-      {"title":"饮食","items":["..."]},
-      {"title":"补液","items":["..."]},
-      {"title":"护理","items":["..."]},
-      {"title":"警戒信号","items":["..."]}
+      {"title":"饮食","icon_key":"diet","bullets":["...","..."]},
+      {"title":"补液","icon_key":"hydration","bullets":["...","..."]},
+      {"title":"护理","icon_key":"care","bullets":["...","..."]},
+      {"title":"警戒信号","icon_key":"warning","bullets":["...","..."]}
     ]
   },
   "summary": "同 ui_strings.summary",
   "bristol_type": null,
   "color": null,
   "texture": null,
-  "hydration_hint": "从 actions_today.hydration 生成一句话",
-  "diet_advice": ["同 actions_today.diet"]
+  "hydration_hint": "从 actions_today 派生一句话",
+  "diet_advice": ["从 actions_today 派生"]
 }
 `.trim();
 
@@ -111,6 +120,7 @@ function userPromptFromBody(body) {
 function buildDefaultResult() {
   return {
     ok: true,
+    schema_version: 2,
     headline: "",
     score: 50,
     risk_level: "low",
@@ -124,22 +134,17 @@ function buildDefaultResult() {
       visible_findings: ["none"],
     },
     reasoning_bullets: [],
-    actions_today: {
-      diet: [],
-      hydration: [],
-      care: [],
-      avoid: [],
-    },
+    actions_today: [],
     red_flags: [],
     follow_up_questions: [],
     ui_strings: {
       summary: "",
       tags: [],
       sections: [
-        { title: "饮食", items: [] },
-        { title: "补液", items: [] },
-        { title: "护理", items: [] },
-        { title: "警戒信号", items: [] },
+        { title: "饮食", icon_key: "diet", bullets: [] },
+        { title: "补液", icon_key: "hydration", bullets: [] },
+        { title: "护理", icon_key: "care", bullets: [] },
+        { title: "警戒信号", icon_key: "warning", bullets: [] },
       ],
     },
     summary: "",
@@ -151,15 +156,25 @@ function buildDefaultResult() {
   };
 }
 
+function ensureMinItems(list, min, defaults) {
+  const base = Array.isArray(list) ? list.slice() : [];
+  let i = 0;
+  while (base.length < min) {
+    base.push(defaults[i % defaults.length]);
+    i += 1;
+  }
+  return base;
+}
+
 function normalizeResult(parsed) {
   const base = buildDefaultResult();
   const out = { ...base, ...(parsed || {}) };
 
   const stool = { ...base.stool_features, ...(out.stool_features || {}) };
-  const actions = { ...base.actions_today, ...(out.actions_today || {}) };
   const ui = { ...base.ui_strings, ...(out.ui_strings || {}) };
 
   out.ok = out.ok === false ? false : true;
+  out.schema_version = 2;
   out.score = Number.isFinite(Number(out.score)) ? Number(out.score) : base.score;
   out.risk_level = ["low", "medium", "high"].includes(out.risk_level)
     ? out.risk_level
@@ -189,27 +204,14 @@ function normalizeResult(parsed) {
   };
 
   out.reasoning_bullets = Array.isArray(out.reasoning_bullets)
-    ? out.reasoning_bullets.map(String).slice(0, 5)
+    ? out.reasoning_bullets.map(String)
     : [];
 
-  out.actions_today = {
-    diet: Array.isArray(actions.diet) ? actions.diet.map(String) : [],
-    hydration: Array.isArray(actions.hydration) ? actions.hydration.map(String) : [],
-    care: Array.isArray(actions.care) ? actions.care.map(String) : [],
-    avoid: Array.isArray(actions.avoid) ? actions.avoid.map(String) : [],
-  };
-
-  out.red_flags = Array.isArray(out.red_flags)
-    ? out.red_flags.map((item) => {
-        if (typeof item === "string") {
-          return { title: item, detail: "" };
-        }
-        return {
-          title: item?.title ? String(item.title) : "",
-          detail: item?.detail ? String(item.detail) : "",
-        };
-      })
+  out.actions_today = Array.isArray(out.actions_today)
+    ? out.actions_today.map(String)
     : [];
+
+  out.red_flags = Array.isArray(out.red_flags) ? out.red_flags.map(String) : [];
 
   out.follow_up_questions = Array.isArray(out.follow_up_questions)
     ? out.follow_up_questions.map(String)
@@ -221,7 +223,8 @@ function normalizeResult(parsed) {
     sections: Array.isArray(ui.sections)
       ? ui.sections.map((sec) => ({
           title: sec?.title ? String(sec.title) : "",
-          items: Array.isArray(sec?.items) ? sec.items.map(String) : [],
+          icon_key: sec?.icon_key ? String(sec.icon_key) : "",
+          bullets: Array.isArray(sec?.bullets) ? sec.bullets.map(String) : [],
         }))
       : base.ui_strings.sections,
   };
@@ -230,8 +233,50 @@ function normalizeResult(parsed) {
   out.bristol_type = out.stool_features.bristol_type ?? null;
   out.color = out.stool_features.color ?? null;
   out.texture = out.stool_features.texture ?? null;
-  out.hydration_hint = out.actions_today.hydration[0] || "";
-  out.diet_advice = out.actions_today.diet || [];
+  out.hydration_hint = out.actions_today[0] || "";
+  out.diet_advice = out.actions_today.slice(0, 5);
+
+  out.reasoning_bullets = ensureMinItems(out.reasoning_bullets, 5, [
+    "根据颜色、质地与量的综合观察进行判断",
+    "结合近期饮食与精神状态做辅助分析",
+    "当前表现更像消化或饮食变化引起",
+    "图片视角与光线会影响判断置信度",
+    "建议继续记录 24-48 小时变化",
+  ]);
+  out.actions_today = ensureMinItems(out.actions_today, 8, [
+    "少量多次补液，观察尿量",
+    "今天饮食以清淡易消化为主",
+    "避免油炸、辛辣和高糖食物",
+    "适当补充含水分的水果/蔬菜",
+    "记录排便次数与性状",
+    "便后温水清洁并保持干爽",
+    "观察是否伴随发热或呕吐",
+    "如症状加重及时就医",
+  ]);
+  out.red_flags = ensureMinItems(out.red_flags, 5, [
+    "明显便血或黑便",
+    "持续高热或精神萎靡",
+    "频繁呕吐或无法进食",
+    "明显脱水（尿量明显减少/口干）",
+    "腹痛剧烈或持续哭闹",
+  ]);
+  out.follow_up_questions = ensureMinItems(out.follow_up_questions, 6, [
+    "是否发热？",
+    "是否持续呕吐？",
+    "24小时内排便次数多少？",
+    "便血/黑便/灰白便是否出现？",
+    "尿量是否减少？",
+    "最近饮食有无明显变化？",
+  ]);
+  out.ui_strings.sections = ensureMinItems(
+    out.ui_strings.sections,
+    4,
+    base.ui_strings.sections
+  ).map((sec, idx) => ({
+    title: sec.title || base.ui_strings.sections[idx % 4].title,
+    icon_key: sec.icon_key || base.ui_strings.sections[idx % 4].icon_key,
+    bullets: ensureMinItems(sec.bullets || [], 2, out.actions_today.slice(0, 4)),
+  }));
 
   return out;
 }
