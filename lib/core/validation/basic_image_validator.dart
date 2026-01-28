@@ -8,40 +8,55 @@ class BasicImageValidator implements ImageValidator {
   @override
   Future<ImageValidationResult> validate(Uint8List bytes) async {
     if (bytes.isEmpty) {
-      return ImageValidationResult.failure(
+      return ImageValidationResult(
+        ok: true,
         reason: ImageValidationReason.unknown,
         message: '图片无法识别，请重新选择。',
+        weakPass: true,
+        warning: '图片无法识别，请重新选择。',
       );
     }
 
     final decoded = await _decode(bytes);
     if (decoded == null) {
-      return ImageValidationResult.failure(
+      return ImageValidationResult(
+        ok: true,
         reason: ImageValidationReason.unknown,
         message: '图片格式无法识别，请换一张图片。',
+        weakPass: true,
+        warning: '图片格式无法识别，请换一张图片。',
       );
     }
 
     final width = decoded.width;
     final height = decoded.height;
     if (min(width, height) < 400) {
-      return ImageValidationResult.failure(
+      return ImageValidationResult(
+        ok: true,
         reason: ImageValidationReason.tooSmall,
         message: '图片分辨率过低，请重新拍摄或选择清晰图片。',
+        weakPass: true,
+        warning: '图片分辨率过低，请重新拍摄或选择清晰图片。',
       );
     }
 
     final stats = await _analyze(decoded);
     if (stats.brightness < 0.25) {
-      return ImageValidationResult.failure(
+      return ImageValidationResult(
+        ok: true,
         reason: ImageValidationReason.tooDark,
         message: '图片偏暗，建议在光线充足环境下拍摄。',
+        weakPass: true,
+        warning: '图片偏暗，建议在光线充足环境下拍摄。',
       );
     }
     if (stats.sharpness < 0.035) {
-      return ImageValidationResult.failure(
+      return ImageValidationResult(
+        ok: true,
         reason: ImageValidationReason.tooBlurry,
         message: '图片偏模糊，请保持稳定并对焦清晰。',
+        weakPass: true,
+        warning: '图片偏模糊，请保持稳定并对焦清晰。',
       );
     }
 
@@ -49,16 +64,14 @@ class BasicImageValidator implements ImageValidator {
     final looksLikeScreenshot = (aspectRatio > 1.9 || aspectRatio < 0.5) &&
         stats.stoolRatio < 0.05;
     if (looksLikeScreenshot) {
-      return ImageValidationResult.failure(
-        reason: ImageValidationReason.notTarget,
-        message: '疑似截图，请使用相机拍摄。',
+      return ImageValidationResult.success(
+        warning: '图片内容不确定，结果仅供参考。',
       );
     }
 
     if (stats.stoolRatio < 0.02 && stats.blueGreenRatio > 0.45) {
-      return ImageValidationResult.failure(
-        reason: ImageValidationReason.notTarget,
-        message: '图片内容不适合分析，请拍摄目标区域。',
+      return ImageValidationResult.success(
+        warning: '图片内容不确定，结果仅供参考。',
       );
     }
 

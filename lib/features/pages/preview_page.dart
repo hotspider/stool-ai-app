@@ -12,10 +12,8 @@ import '../../design/tokens.dart';
 import '../../design/widgets/app_scaffold.dart';
 import '../../design/widgets/press_scale.dart';
 import '../../design/widgets/soft_card.dart';
-import '../models/user_inputs.dart';
 import '../models/result_payload.dart';
-import '../services/analyzer/analyzer.dart';
-import '../services/analyzer/analyzer_factory.dart';
+import '../services/api_service.dart';
 import '../widgets/error_state_card.dart';
 
 class PreviewPage extends StatefulWidget {
@@ -58,9 +56,6 @@ class _PreviewPageState extends State<PreviewPage> {
       _validation = result;
       _isValidating = false;
     });
-    if (!result.ok) {
-      _showInvalidSheet(result.reason, result.message);
-    }
   }
 
   Future<void> _showInvalidSheet(
@@ -68,6 +63,7 @@ class _PreviewPageState extends State<PreviewPage> {
     String message,
   ) async {
     final l10n = AppLocalizations.of(context)!;
+    final title = _errorTitle(reason);
     final description = _errorDescription(reason, message);
     await showModalBottomSheet<void>(
       context: context,
@@ -84,8 +80,7 @@ class _PreviewPageState extends State<PreviewPage> {
             const Icon(Icons.error_outline,
                 size: 36, color: AppTokens.riskMedium),
             const SizedBox(height: AppTokens.s12),
-            Text(l10n.previewNotTargetTitle,
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(description, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 16),
@@ -126,12 +121,39 @@ class _PreviewPageState extends State<PreviewPage> {
       case ImageValidationReason.notTarget:
         return l10n.previewNotTargetMessage;
       case ImageValidationReason.tooBlurry:
-      case ImageValidationReason.tooDark:
-      case ImageValidationReason.tooSmall:
         return l10n.previewBlurryMessage;
+      case ImageValidationReason.tooDark:
+        return fallback;
+      case ImageValidationReason.tooSmall:
+        return fallback;
       case ImageValidationReason.unknown:
         return l10n.previewUnknownMessage;
     }
+  }
+
+  String _errorTitle(ImageValidationReason reason) {
+    final l10n = AppLocalizations.of(context)!;
+    switch (reason) {
+      case ImageValidationReason.tooSmall:
+        return '图片尺寸过小';
+      case ImageValidationReason.tooDark:
+        return '图片太暗';
+      case ImageValidationReason.tooBlurry:
+        return '图片不清晰';
+      case ImageValidationReason.notTarget:
+        return l10n.previewNotTargetTitle;
+      case ImageValidationReason.unknown:
+        return '图片无法识别';
+    }
+  }
+
+  bool _shouldShowSheet(ImageValidationResult result) {
+    if (result.ok) {
+      return false;
+    }
+    return result.reason == ImageValidationReason.tooDark ||
+        result.reason == ImageValidationReason.tooBlurry ||
+        result.reason == ImageValidationReason.tooSmall;
   }
 
   Future<void> _repick(ImageSourceType source) async {
@@ -214,19 +236,14 @@ class _PreviewPageState extends State<PreviewPage> {
     if (_bytes == null || _isAnalyzing) {
       return;
     }
+    debugPrint(
+      'Preview analyze: bytes=${_bytes?.length ?? 0}, validation=${_validation?.reason}, url=${ApiService.baseUrl}/analyze',
+    );
     setState(() {
       _isAnalyzing = true;
     });
     try {
-      final analyzer = AnalyzerFactory.create();
-      final result = await analyzer.analyze(
-        imageBytes: _bytes!,
-        inputs: const UserInputs(
-          odor: 'none',
-          painOrStrain: false,
-          dietKeywords: '',
-        ),
-      );
+      final result = await ApiService.analyzeImage(imageBytes: _bytes!);
       if (!mounted) {
         return;
       }
@@ -238,14 +255,14 @@ class _PreviewPageState extends State<PreviewPage> {
             _validation?.weakPass == true ? l10n.previewWeakPass : null,
       );
       context.push('/result', extra: payload);
-    } on AnalyzerException catch (e) {
+    } on ApiServiceException catch (e) {
       if (!mounted) {
         return;
       }
       final l10n = AppLocalizations.of(context)!;
-      final message = e.message == 'remote_unavailable'
-          ? l10n.remoteUnavailable
-          : l10n.resultErrorMessage;
+      final message = e.code == ApiServiceErrorCode.notTarget
+          ? '未识别到目标，请换更清晰或包含尿不湿/便便的图片'
+          : (e.message ?? l10n.resultErrorMessage);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -281,7 +298,7 @@ class _PreviewPageState extends State<PreviewPage> {
       );
     }
 
-    final canAnalyze = _validation?.ok == true && !_isValidating && !_isAnalyzing;
+    final canAnalyze = _bytes != null && !_isValidating && !_isAnalyzing;
 
     return AppScaffold(
       title: l10n.previewTitle,
@@ -317,6 +334,14 @@ class _PreviewPageState extends State<PreviewPage> {
           else if (_validation?.ok == true && _validation?.weakPass == true)
             Text(
               l10n.previewWeakPass,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppTokens.riskMedium),
+            )
+          else if (_validation != null && _validation!.ok == false)
+            Text(
+              _errorDescription(_validation!.reason, _validation!.message),
               style: Theme.of(context)
                   .textTheme
                   .bodySmall

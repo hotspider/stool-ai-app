@@ -9,6 +9,11 @@
    - `flutter pub get`
    - `flutter run -d android`
 
+## API 验证脚本
+
+在项目根目录执行：
+`API_BASE=https://api.tapgiga.com IMG=~/Downloads/1.jpg ./tools/verify_api.sh`
+
 ## 底部导航与主要路由
 
 - **主页**：`/home`（拍照/相册 → Preview/Result）

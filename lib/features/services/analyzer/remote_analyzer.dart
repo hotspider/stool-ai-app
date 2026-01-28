@@ -12,7 +12,7 @@ import 'analyzer.dart';
 import 'mock_analyzer.dart';
 
 class RemoteAnalyzer implements Analyzer {
-  static const String defaultBaseUrl = 'https://your-worker.example.com/v1';
+  static const String defaultBaseUrl = 'https://api.tapgiga.com';
 
   final ApiClient client;
   final bool allowFallbackInDebug;

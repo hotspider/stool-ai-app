@@ -36,7 +36,8 @@ class ImageSourceService {
     }
     final file = await _picker.pickImage(
       source: ImageSource.camera,
-      maxWidth: 1600,
+      maxWidth: 2000,
+      maxHeight: 2000,
       imageQuality: 85,
     );
     if (file == null) {
@@ -52,7 +53,8 @@ class ImageSourceService {
     }
     final file = await _picker.pickImage(
       source: ImageSource.gallery,
-      maxWidth: 1600,
+      maxWidth: 2000,
+      maxHeight: 2000,
       imageQuality: 85,
     );
     if (file == null) {

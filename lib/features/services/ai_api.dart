@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 
 class AiApi {
   // Android 模拟器访问你电脑的 localhost 的固定地址
-  static const String baseUrl = 'http://10.0.2.2:8787';
+  static const String baseUrl = 'https://api.tapgiga.com';
 
   static Future<Map<String, dynamic>> analyze({
     required Uint8List imageBytes,

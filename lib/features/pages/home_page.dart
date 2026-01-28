@@ -13,6 +13,7 @@ import '../../design/components/section_header.dart';
 import '../../design/components/soft_card.dart';
 import '../../design/components/primary_button.dart';
 import '../../design/components/secondary_button.dart';
+import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/risk_badge.dart';
@@ -26,6 +27,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool _bannerVisible = true;
+  bool _isAnalyzing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +71,7 @@ class _HomePageState extends State<HomePage> {
                     title: l10n.homeRecentEmptyTitle,
                     message: l10n.homeRecentEmptyMessage,
                     actionLabel: l10n.homeRecentAction,
-                    onAction: () => _pickImage(context, ImageSourceType.camera),
+                    onAction: () => _startAnalyze(context),
                   );
                 }
                 final latest = records.first;
@@ -156,6 +158,63 @@ class _HomePageState extends State<HomePage> {
         SnackBar(content: Text(l10n.previewPickFailed)),
       );
     }
+  }
+
+  Future<void> _startAnalyze(BuildContext context) async {
+    if (_isAnalyzing) {
+      return;
+    }
+    setState(() => _isAnalyzing = true);
+    try {
+      final bytes = await ImageSourceService.instance.pickFromCamera();
+      if (bytes == null) {
+        if (context.mounted) {
+          final l10n = AppLocalizations.of(context)!;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.previewCanceled)),
+          );
+        }
+        return;
+      }
+      if (!context.mounted) {
+        return;
+      }
+      _showLoadingDialog(context);
+      final payload = await ApiService.analyzeImage(imageBytes: bytes);
+      if (!context.mounted) {
+        return;
+      }
+      Navigator.of(context, rootNavigator: true).pop();
+      context.push('/result', extra: payload);
+    } on ImageSourceFailure {
+      if (!context.mounted) {
+        return;
+      }
+      _showPermissionSheet(context, ImageSourceType.camera);
+    } catch (_) {
+      if (!context.mounted) {
+        return;
+      }
+      Navigator.of(context, rootNavigator: true).maybePop();
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.resultErrorMessage)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAnalyzing = false);
+      }
+    }
+  }
+
+  void _showLoadingDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
   }
 
   void _showPermissionSheet(BuildContext context, ImageSourceType source) {
