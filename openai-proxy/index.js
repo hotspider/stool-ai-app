@@ -80,12 +80,12 @@ app.post("/analyze", async (req, res) => {
           ]
         }
       ],
-      text: { format: { type: "json" } },
+      text: { format: { type: "json_object" } },
       temperature: 0.2,
       max_output_tokens: 900
     };
 
-    console.log(`[OPENAI] request model=${model} text.format=json`);
+    console.log(`[OPENAI] request model=${model} text.format=json_object`);
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -117,6 +117,9 @@ app.post("/analyze", async (req, res) => {
 
     const data = await response.json();
     const outputText = extractOutputText(data);
+    console.log(
+      `[OPENAI] output_text=${String(outputText || "").slice(0, 200)}`
+    );
     if (!outputText) {
       return res.status(502).json({
         ok: false,
