@@ -200,10 +200,15 @@ function normalizeResult(parsed) {
   };
 
   out.red_flags = Array.isArray(out.red_flags)
-    ? out.red_flags.map((item) => ({
-        title: item?.title ? String(item.title) : "",
-        detail: item?.detail ? String(item.detail) : "",
-      }))
+    ? out.red_flags.map((item) => {
+        if (typeof item === "string") {
+          return { title: item, detail: "" };
+        }
+        return {
+          title: item?.title ? String(item.title) : "",
+          detail: item?.detail ? String(item.detail) : "",
+        };
+      })
     : [];
 
   out.follow_up_questions = Array.isArray(out.follow_up_questions)
