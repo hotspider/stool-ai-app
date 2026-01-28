@@ -212,7 +212,9 @@ class StoolFeatures {
         : 'unknown';
 
     final findings = json['visible_findings'];
-    final visibleFindings = findings is List ? findings.map((e) => e.toString()).toList() : const [];
+    final visibleFindings = findings is List
+        ? findings.map((e) => e.toString()).toList()
+        : const <String>[];
     if (visibleFindings.isEmpty) missing.add('stool_features.visible_findings');
 
     return StoolFeatures(

@@ -286,6 +286,7 @@ class AppLocalizationsTh extends AppLocalizations {
 
   @override
   String get resultActionsObserve => 'Observe (next 24h)';
+
   @override
   String get resultActionsAvoid => 'Avoid';
 

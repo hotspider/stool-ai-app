@@ -278,6 +278,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get resultActionsObserve => '观察（未来24小时）';
+
   @override
   String get resultActionsAvoid => '今日避免';
 
