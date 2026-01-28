@@ -55,8 +55,9 @@ class AppRouter {
         parentNavigatorKey: _rootNavigatorKey,
         path: '/preview',
         builder: (context, state) {
-          final selection =
-              state.extra is ImageSelection ? state.extra as ImageSelection : null;
+          final selection = state.extra is ImageSelection
+              ? state.extra as ImageSelection
+              : null;
           return PreviewPage(selection: selection);
         },
       ),
@@ -69,11 +70,13 @@ class AppRouter {
             return ResultPage(
               initialAnalysis: payload.analysis,
               initialAdvice: payload.advice,
+              initialStructured: payload.structured,
               validationWarning: payload.validationWarning,
             );
           }
-          final analysis =
-              state.extra is AnalyzeResponse ? state.extra as AnalyzeResponse : null;
+          final analysis = state.extra is AnalyzeResponse
+              ? state.extra as AnalyzeResponse
+              : null;
           return ResultPage(initialAnalysis: analysis);
         },
       ),

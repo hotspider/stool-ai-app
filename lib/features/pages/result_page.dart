@@ -33,12 +33,14 @@ class ResultPage extends StatefulWidget {
   final AnalyzeResponse? initialAnalysis;
   final String? validationWarning;
   final AdviceResponse? initialAdvice;
+  final StoolAnalysisParseResult? initialStructured;
 
   const ResultPage({
     super.key,
     this.initialAnalysis,
     this.validationWarning,
     this.initialAdvice,
+    this.initialStructured,
   });
 
   @override
@@ -48,7 +50,14 @@ class ResultPage extends StatefulWidget {
 class _ResultPageState extends State<ResultPage> {
   final Random _random = Random();
   final TextEditingController _dietController = TextEditingController();
-  final List<String> _odorOptions = ['none', 'light', 'strong', 'sour', 'rotten', 'other'];
+  final List<String> _odorOptions = [
+    'none',
+    'light',
+    'strong',
+    'sour',
+    'rotten',
+    'other'
+  ];
   late String _odor;
   bool _painOrStrain = false;
   bool _adviceUpdated = false;
@@ -73,6 +82,7 @@ class _ResultPageState extends State<ResultPage> {
       _runAnalysisFlow(
         precomputed: widget.initialAnalysis,
         precomputedAdvice: widget.initialAdvice,
+        precomputedStructured: widget.initialStructured,
       );
     });
   }
@@ -86,6 +96,7 @@ class _ResultPageState extends State<ResultPage> {
   Future<void> _runAnalysisFlow({
     AnalyzeResponse? precomputed,
     AdviceResponse? precomputedAdvice,
+    StoolAnalysisParseResult? precomputedStructured,
   }) async {
     final l10n = AppLocalizations.of(context)!;
     // AnalysisContext reserved for future metadata.
@@ -100,9 +111,12 @@ class _ResultPageState extends State<ResultPage> {
       _isSaving = false;
       _isUpdatingAdvice = false;
       _steps = [
-        LoadingStepItem(label: l10n.loadingStepQuality, status: LoadingStepStatus.active),
-        LoadingStepItem(label: l10n.loadingStepFeatures, status: LoadingStepStatus.pending),
-        LoadingStepItem(label: l10n.loadingStepAdvice, status: LoadingStepStatus.pending),
+        LoadingStepItem(
+            label: l10n.loadingStepQuality, status: LoadingStepStatus.active),
+        LoadingStepItem(
+            label: l10n.loadingStepFeatures, status: LoadingStepStatus.pending),
+        LoadingStepItem(
+            label: l10n.loadingStepAdvice, status: LoadingStepStatus.pending),
       ];
     });
 
@@ -142,15 +156,19 @@ class _ResultPageState extends State<ResultPage> {
         setState(() {
           _analysis = analysis;
           _advice = precomputedAdvice;
-          _structured = null;
+          _structured = precomputedStructured;
           _checks =
               List<bool>.filled(precomputedAdvice.next48hActions.length, false);
           _analyzedAt = analysis.analyzedAt;
           _isAnalyzing = false;
           _steps = [
-            LoadingStepItem(label: l10n.loadingStepQuality, status: LoadingStepStatus.done),
-            LoadingStepItem(label: l10n.loadingStepFeatures, status: LoadingStepStatus.done),
-            LoadingStepItem(label: l10n.loadingStepAdvice, status: LoadingStepStatus.done),
+            LoadingStepItem(
+                label: l10n.loadingStepQuality, status: LoadingStepStatus.done),
+            LoadingStepItem(
+                label: l10n.loadingStepFeatures,
+                status: LoadingStepStatus.done),
+            LoadingStepItem(
+                label: l10n.loadingStepAdvice, status: LoadingStepStatus.done),
           ];
         });
         return;
@@ -174,9 +192,12 @@ class _ResultPageState extends State<ResultPage> {
         _analyzedAt = resolved.analyzedAt;
         _isAnalyzing = false;
         _steps = [
-          LoadingStepItem(label: l10n.loadingStepQuality, status: LoadingStepStatus.done),
-          LoadingStepItem(label: l10n.loadingStepFeatures, status: LoadingStepStatus.done),
-          LoadingStepItem(label: l10n.loadingStepAdvice, status: LoadingStepStatus.done),
+          LoadingStepItem(
+              label: l10n.loadingStepQuality, status: LoadingStepStatus.done),
+          LoadingStepItem(
+              label: l10n.loadingStepFeatures, status: LoadingStepStatus.done),
+          LoadingStepItem(
+              label: l10n.loadingStepAdvice, status: LoadingStepStatus.done),
         ];
       });
       if (result.structured?.missing.isNotEmpty == true) {
@@ -262,7 +283,8 @@ class _ResultPageState extends State<ResultPage> {
       checkedActions: _buildCheckedActions(_advice),
     );
     try {
-      final file = await PdfExportService.exportRecordToPdfFile(tempRecord, l10n);
+      final file =
+          await PdfExportService.exportRecordToPdfFile(tempRecord, l10n);
       await Share.shareXFiles([XFile(file.path)], text: l10n.pdfTitle);
       if (!mounted) {
         return;
@@ -354,6 +376,14 @@ class _ResultPageState extends State<ResultPage> {
     final advice = _advice;
     final structured = _structured?.result;
     final canUseResult = structured != null && structured.ok;
+    final legacyActions = advice?.next48hActions ?? const [];
+    final hasStructuredActions = structured != null &&
+        (structured.actionsToday.diet.isNotEmpty ||
+            structured.actionsToday.hydration.isNotEmpty ||
+            structured.actionsToday.care.isNotEmpty ||
+            structured.actionsToday.avoid.isNotEmpty);
+    final useLegacyActions =
+        structured != null && !hasStructuredActions && legacyActions.isNotEmpty;
 
     return AppScaffold(
       title: l10n.resultTitle,
@@ -374,7 +404,7 @@ class _ResultPageState extends State<ResultPage> {
               )
             else if (_isAnalyzing || analysis == null || advice == null)
               LoadingSteps(steps: _steps)
-            else if (structured == null || !structured.ok) ...[
+            else if (structured == null) ...[
               SoftCard(
                 child: Text(
                   l10n.resultInsufficientMessage,
@@ -385,16 +415,41 @@ class _ResultPageState extends State<ResultPage> {
               AnimatedEntry(
                 child: _SummaryCard(
                   riskLevel: _riskLevelFromString(structured.riskLevel),
-                  riskLabel: _riskLabel(l10n, _riskLevelFromString(structured.riskLevel)),
+                  riskLabel: _riskLabel(
+                      l10n, _riskLevelFromString(structured.riskLevel)),
                   riskDescription: _riskDescription(structured.riskLevel),
                   riskColor: _riskColor(structured.riskLevel),
-                  headline: structured.headline,
+                  headline: structured.headline.isEmpty
+                      ? l10n.resultInsufficientMessage
+                      : structured.headline,
                   summary: structured.uiStrings.summary.isEmpty
                       ? structured.summary
                       : structured.uiStrings.summary,
+                  confidence: structured.confidence,
+                  uncertaintyNote: structured.uncertaintyNote,
                   warning: widget.validationWarning,
                 ),
               ),
+              if (!structured.ok) ...[
+                const SizedBox(height: AppSpace.s12),
+                SoftCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(l10n.resultInsufficientMessage,
+                          style: AppText.section),
+                      if (structured.uncertaintyNote.isNotEmpty) ...[
+                        const SizedBox(height: AppSpace.s8),
+                        Text(structured.uncertaintyNote, style: AppText.body),
+                      ],
+                      if (structured.followUpQuestions.isNotEmpty) ...[
+                        const SizedBox(height: AppSpace.s8),
+                        _BulletList(items: structured.followUpQuestions),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: AppSpace.s12),
               Wrap(
                 spacing: AppSpace.s8,
@@ -404,7 +459,8 @@ class _ResultPageState extends State<ResultPage> {
                     label: l10n.resultMetricBristol,
                     value: structured.stoolFeatures.bristolType == null
                         ? l10n.resultInsufficientMessage
-                        : l10n.resultBristolValue(structured.stoolFeatures.bristolType!),
+                        : l10n.resultBristolValue(
+                            structured.stoolFeatures.bristolType!),
                   ),
                   _MetricChip(
                     label: l10n.resultMetricColor,
@@ -445,9 +501,11 @@ class _ResultPageState extends State<ResultPage> {
                         children: structured.uiStrings.sections
                             .map(
                               (section) => Padding(
-                                padding: const EdgeInsets.only(bottom: AppSpace.s12),
+                                padding:
+                                    const EdgeInsets.only(bottom: AppSpace.s12),
                                 child: _ActionSection(
                                   title: section.title,
+                                  iconKey: section.iconKey,
                                   items: section.items,
                                 ),
                               ),
@@ -456,27 +514,39 @@ class _ResultPageState extends State<ResultPage> {
                       )
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _ActionSection(
-                            title: l10n.resultActionsDiet,
-                            items: structured.actionsToday.diet,
-                          ),
-                          const SizedBox(height: AppSpace.s12),
-                          _ActionSection(
-                            title: l10n.resultActionsHydration,
-                            items: structured.actionsToday.hydration,
-                          ),
-                          const SizedBox(height: AppSpace.s12),
-                          _ActionSection(
-                            title: l10n.resultActionsCare,
-                            items: structured.actionsToday.care,
-                          ),
-                          const SizedBox(height: AppSpace.s12),
-                          _ActionSection(
-                            title: l10n.resultActionsAvoid,
-                            items: structured.actionsToday.avoid,
-                          ),
-                        ],
+                        children: useLegacyActions
+                            ? [
+                                _ActionSection(
+                                  title: l10n.resultActionsTitle,
+                                  iconKey: 'actions',
+                                  items: legacyActions,
+                                ),
+                              ]
+                            : [
+                                _ActionSection(
+                                  title: l10n.resultActionsDiet,
+                                  iconKey: 'diet',
+                                  items: structured.actionsToday.diet,
+                                ),
+                                const SizedBox(height: AppSpace.s12),
+                                _ActionSection(
+                                  title: l10n.resultActionsHydration,
+                                  iconKey: 'hydration',
+                                  items: structured.actionsToday.hydration,
+                                ),
+                                const SizedBox(height: AppSpace.s12),
+                                _ActionSection(
+                                  title: l10n.resultActionsCare,
+                                  iconKey: 'care',
+                                  items: structured.actionsToday.care,
+                                ),
+                                const SizedBox(height: AppSpace.s12),
+                                _ActionSection(
+                                  title: l10n.resultActionsAvoid,
+                                  iconKey: 'avoid',
+                                  items: structured.actionsToday.avoid,
+                                ),
+                              ],
                       ),
               ),
               const SizedBox(height: AppSpace.s16),
@@ -504,7 +574,8 @@ class _ResultPageState extends State<ResultPage> {
                   children: [
                     DropdownButtonFormField<String>(
                       value: _odor,
-                      decoration: InputDecoration(labelText: l10n.resultOdorLabel),
+                      decoration:
+                          InputDecoration(labelText: l10n.resultOdorLabel),
                       items: _odorOptions
                           .map(
                             (value) => DropdownMenuItem<String>(
@@ -583,9 +654,10 @@ class _ResultPageState extends State<ResultPage> {
               Expanded(
                 child: SecondaryButton(
                   label: l10n.exportPdfTooltip,
-                  onPressed: _isAnalyzing || _isSaving || _isExporting || !canUseResult
-                      ? null
-                      : _exportPdfFromResult,
+                  onPressed:
+                      _isAnalyzing || _isSaving || _isExporting || !canUseResult
+                          ? null
+                          : _exportPdfFromResult,
                   loading: _isExporting,
                 ),
               ),
@@ -723,7 +795,9 @@ class _ResultPageState extends State<ResultPage> {
       score -= 6;
     }
 
-    final findings = structured.stoolFeatures.visibleFindings.map((e) => e.toLowerCase()).toList();
+    final findings = structured.stoolFeatures.visibleFindings
+        .map((e) => e.toLowerCase())
+        .toList();
     if (findings.contains('blood')) {
       score -= 40;
     }
@@ -754,6 +828,8 @@ class _SummaryCard extends StatelessWidget {
   final Color riskColor;
   final String headline;
   final String summary;
+  final double confidence;
+  final String uncertaintyNote;
   final String? warning;
 
   const _SummaryCard({
@@ -763,6 +839,8 @@ class _SummaryCard extends StatelessWidget {
     required this.riskColor,
     required this.headline,
     required this.summary,
+    required this.confidence,
+    required this.uncertaintyNote,
     this.warning,
   });
 
@@ -793,6 +871,15 @@ class _SummaryCard extends StatelessWidget {
                 Text(headline, style: AppText.section),
                 const SizedBox(height: AppSpace.s6),
                 Text(summary, style: AppText.body),
+                const SizedBox(height: AppSpace.s6),
+                Text(
+                  '置信度 ${(confidence * 100).round()}%',
+                  style: AppText.caption,
+                ),
+                if (uncertaintyNote.isNotEmpty) ...[
+                  const SizedBox(height: AppSpace.s6),
+                  Text(uncertaintyNote, style: AppText.caption),
+                ],
                 const SizedBox(height: AppSpace.s6),
                 Text(riskDescription, style: AppText.caption),
                 if (warning != null) ...[
@@ -890,19 +977,50 @@ class _BulletList extends StatelessWidget {
 
 class _ActionSection extends StatelessWidget {
   final String title;
+  final String iconKey;
   final List<String> items;
 
   const _ActionSection({
     required this.title,
+    required this.iconKey,
     required this.items,
   });
+
+  IconData _iconForKey(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'diet':
+        return Icons.restaurant_rounded;
+      case 'hydration':
+        return Icons.water_drop_rounded;
+      case 'care':
+        return Icons.healing_rounded;
+      case 'warning':
+        return Icons.warning_amber_rounded;
+      case 'avoid':
+        return Icons.block_rounded;
+      case 'observe':
+        return Icons.visibility_rounded;
+      case 'actions':
+        return Icons.checklist_rounded;
+      default:
+        return Icons.list_alt_rounded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: AppText.section),
+        Row(
+          children: [
+            if (iconKey.isNotEmpty) ...[
+              Icon(_iconForKey(iconKey), size: 18, color: AppColors.primary),
+              const SizedBox(width: AppSpace.s6),
+            ],
+            Text(title, style: AppText.section),
+          ],
+        ),
         const SizedBox(height: AppSpace.s6),
         _BulletList(items: items),
       ],
@@ -946,8 +1064,7 @@ class _WarningCard extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: AppSpace.s8),
                 child: Text('• $item', style: AppText.body),
               )),
-          if (items.isEmpty)
-            Text(hint, style: AppText.caption),
+          if (items.isEmpty) Text(hint, style: AppText.caption),
         ],
       ),
     );

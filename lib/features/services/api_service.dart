@@ -48,14 +48,20 @@ class ApiService {
       debugPrint(
         'ApiService json preview: ${jsonBody.substring(0, jsonBody.length > 200 ? 200 : jsonBody.length)}',
       );
-      final response = await http
-          .post(url, headers: headers, body: jsonBody)
-          .timeout(const Duration(seconds: 15));
+      final response = await _postJsonWithRetry(url, jsonBody, headers);
       debugPrint(
         'ApiService response: ${response.statusCode} ${_snippet(response.body, 300)}',
       );
+      debugPrint(
+        'ApiService headers: x-worker-version=${response.headers['x-worker-version']} '
+        'x-proxy-version=${response.headers['x-proxy-version']} '
+        'schema_version=${response.headers['schema_version']}',
+      );
 
       final body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) {
+        debugPrint('ApiService body schema_version: ${body['schema_version']}');
+      }
       if (response.statusCode >= 400) {
         final message = body is Map<String, dynamic>
             ? body['message']?.toString() ?? 'Request failed'
@@ -71,14 +77,15 @@ class ApiService {
       }
 
       if (body['ok'] == false) {
-        final message = body['message']?.toString();
-        throw ApiServiceException(ApiServiceErrorCode.remoteError, message);
+        debugPrint(
+          'ApiService response ok=false: ${body['error'] ?? ''} ${body['message'] ?? ''}',
+        );
       }
 
       final parsed = StoolAnalysisResult.parse(body);
       if (parsed.missing.isNotEmpty) {
         debugPrint(
-          '[ApiService] missing fields: ${parsed.missing.join(', ')}',
+          '[ApiService][WARN] missing fields: ${parsed.missing.join(', ')}',
         );
       }
       final result = parsed.result;
@@ -115,6 +122,7 @@ class ApiService {
       return ResultPayload(
         analysis: AnalyzeResponse.fromJson(analysisJson),
         advice: AdviceResponse.fromJson(adviceJson),
+        structured: parsed,
       );
     } catch (error, stack) {
       if (error is TimeoutException || error is HandshakeException) {
@@ -143,6 +151,37 @@ String _snippet(String input, [int max = 300]) {
     return input;
   }
   return input.substring(0, max);
+}
+
+Future<http.Response> _postJsonWithRetry(
+  Uri url,
+  String body,
+  Map<String, String> headers,
+) async {
+  const maxAttempts = 3;
+  var attempt = 0;
+  var delayMs = 600;
+
+  while (true) {
+    attempt++;
+    try {
+      final resp = await http
+          .post(url, headers: headers, body: body)
+          .timeout(const Duration(seconds: 60));
+      if ((resp.statusCode == 502 || resp.statusCode == 503) &&
+          attempt < maxAttempts) {
+        throw HttpException('retryable_${resp.statusCode}');
+      }
+      return resp;
+    } on TimeoutException {
+      if (attempt >= maxAttempts) rethrow;
+    } catch (_) {
+      if (attempt >= maxAttempts) rethrow;
+    }
+
+    await Future.delayed(Duration(milliseconds: delayMs));
+    delayMs = (delayMs * 2).clamp(600, 2500);
+  }
 }
 
 enum ApiServiceErrorCode { notTarget, remoteError, invalidResponse }

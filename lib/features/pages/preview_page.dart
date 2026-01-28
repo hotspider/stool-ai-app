@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:app/l10n/app_localizations.dart';
 
@@ -251,6 +252,7 @@ class _PreviewPageState extends State<PreviewPage> {
       final payload = ResultPayload(
         analysis: result.analysis,
         advice: result.advice,
+        structured: result.structured,
         validationWarning:
             _validation?.weakPass == true ? l10n.previewWeakPass : null,
       );
@@ -263,16 +265,32 @@ class _PreviewPageState extends State<PreviewPage> {
       final message = e.code == ApiServiceErrorCode.notTarget
           ? '未识别到目标，请换更清晰或包含尿不湿/便便的图片'
           : (e.message ?? l10n.resultErrorMessage);
+      final details =
+          'ApiServiceException: ${e.code} ${e.message ?? ''}'.trim();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
+        SnackBar(
+          content: Text(message),
+          action: SnackBarAction(
+            label: '复制错误',
+            onPressed: () => Clipboard.setData(ClipboardData(text: details)),
+          ),
+        ),
       );
     } catch (_) {
       if (!mounted) {
         return;
       }
       final l10n = AppLocalizations.of(context)!;
+      const details = 'Unknown error during analyze';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.resultErrorMessage)),
+        SnackBar(
+          content: Text(l10n.resultErrorMessage),
+          action: SnackBarAction(
+            label: '复制错误',
+            onPressed: () =>
+                Clipboard.setData(const ClipboardData(text: details)),
+          ),
+        ),
       );
     } finally {
       if (mounted) {
@@ -381,6 +399,13 @@ class _PreviewPageState extends State<PreviewPage> {
               ),
             ],
           ),
+          if (_isAnalyzing) ...[
+            const SizedBox(height: AppTokens.s8),
+            Text(
+              '预计 10~30 秒',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           const SizedBox(height: AppTokens.s12),
           Text(
             l10n.previewHint,

@@ -141,10 +141,10 @@ function buildDefaultResult() {
       summary: "",
       tags: [],
       sections: [
-        { title: "饮食", icon_key: "diet", bullets: [] },
-        { title: "补液", icon_key: "hydration", bullets: [] },
-        { title: "护理", icon_key: "care", bullets: [] },
-        { title: "警戒信号", icon_key: "warning", bullets: [] },
+        { title: "饮食", icon_key: "diet", items: [], bullets: [] },
+        { title: "补液", icon_key: "hydration", items: [], bullets: [] },
+        { title: "护理", icon_key: "care", items: [], bullets: [] },
+        { title: "警戒信号", icon_key: "warning", items: [], bullets: [] },
       ],
     },
     summary: "",
@@ -221,11 +221,23 @@ function normalizeResult(parsed) {
     summary: typeof ui.summary === "string" ? ui.summary : out.summary,
     tags: Array.isArray(ui.tags) ? ui.tags.map(String) : [],
     sections: Array.isArray(ui.sections)
-      ? ui.sections.map((sec) => ({
-          title: sec?.title ? String(sec.title) : "",
-          icon_key: sec?.icon_key ? String(sec.icon_key) : "",
-          bullets: Array.isArray(sec?.bullets) ? sec.bullets.map(String) : [],
-        }))
+      ? ui.sections.map((sec) => {
+          const items = Array.isArray(sec?.items)
+            ? sec.items
+            : Array.isArray(sec?.bullets)
+                ? sec.bullets
+                : [];
+          return {
+            title: sec?.title ? String(sec.title) : "",
+            icon_key: sec?.icon_key ? String(sec.icon_key) : "",
+            items: Array.isArray(items) ? items.map(String) : [],
+            bullets: Array.isArray(sec?.bullets)
+              ? sec.bullets.map(String)
+              : Array.isArray(sec?.items)
+                  ? sec.items.map(String)
+                  : [],
+          };
+        })
       : base.ui_strings.sections,
   };
 
@@ -275,7 +287,16 @@ function normalizeResult(parsed) {
   ).map((sec, idx) => ({
     title: sec.title || base.ui_strings.sections[idx % 4].title,
     icon_key: sec.icon_key || base.ui_strings.sections[idx % 4].icon_key,
-    bullets: ensureMinItems(sec.bullets || [], 2, out.actions_today.slice(0, 4)),
+    items: ensureMinItems(
+      sec.items || sec.bullets || [],
+      2,
+      out.actions_today.slice(0, 4)
+    ),
+    bullets: ensureMinItems(
+      sec.bullets || sec.items || [],
+      2,
+      out.actions_today.slice(0, 4)
+    ),
   }));
 
   return out;

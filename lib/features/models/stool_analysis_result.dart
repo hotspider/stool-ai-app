@@ -134,7 +134,8 @@ class StoolAnalysisResult {
     final reasoningBullets = _list('reasoning_bullets');
     final actionsTodayRaw = ActionsToday.parse(_map('actions_today'), missing);
     final actionsToday = actionsTodayRaw.withDefaults();
-    final redFlags = RedFlagItem.parseList(_listOfMaps(json, 'red_flags', missing));
+    final redFlags =
+        RedFlagItem.parseList(_listOfMaps(json, 'red_flags', missing));
     final followUpQuestions = _list('follow_up_questions');
     final uiStrings = UiStrings.parse(_map('ui_strings'), missing);
 
@@ -142,13 +143,17 @@ class StoolAnalysisResult {
     final bristolType = stoolFeatures.bristolType;
     final color = stoolFeatures.color;
     final texture = stoolFeatures.texture;
-    final hydrationHint =
-        _string('hydration_hint', fallback: actionsToday.hydration.isNotEmpty ? actionsToday.hydration.first : '');
-    final dietAdvice =
-        _list('diet_advice').isNotEmpty ? _list('diet_advice') : actionsToday.diet;
+    final hydrationHint = _string('hydration_hint',
+        fallback: actionsToday.hydration.isNotEmpty
+            ? actionsToday.hydration.first
+            : '');
+    final dietAdvice = _list('diet_advice').isNotEmpty
+        ? _list('diet_advice')
+        : actionsToday.diet;
 
     if (missing.isNotEmpty) {
-      debugPrint('[StoolAnalysisResult] missing fields: ${missing.join(', ')}');
+      debugPrint(
+          '[StoolAnalysisResult][WARN] missing fields: ${missing.join(', ')}');
     }
 
     return StoolAnalysisParseResult(
@@ -242,26 +247,20 @@ class ActionsToday {
 
   static ActionsToday parse(Map<String, dynamic> json, List<String> missing) {
     final diet = _stringList(json['diet'], 'actions_today.diet', missing);
-    final hydration = _stringList(json['hydration'], 'actions_today.hydration', missing);
+    final hydration =
+        _stringList(json['hydration'], 'actions_today.hydration', missing);
     final care = _stringList(json['care'], 'actions_today.care', missing);
     final avoid = _stringList(json['avoid'], 'actions_today.avoid', missing);
-    return ActionsToday(diet: diet, hydration: hydration, care: care, avoid: avoid);
+    return ActionsToday(
+        diet: diet, hydration: hydration, care: care, avoid: avoid);
   }
 
   ActionsToday withDefaults() {
     return ActionsToday(
-      diet: diet.isEmpty
-          ? const ['清淡饮食，减少油腻与刺激性食物', '少量多餐，观察耐受情况']
-          : diet,
-      hydration: hydration.isEmpty
-          ? const ['少量多次补液，避免一次性大量饮水']
-          : hydration,
-      care: care.isEmpty
-          ? const ['勤更换尿布/清洁，保持干爽', '观察皮肤是否红肿或破损']
-          : care,
-      avoid: avoid.isEmpty
-          ? const ['避免高糖/高脂/刺激性食物']
-          : avoid,
+      diet: diet.isEmpty ? const ['清淡饮食，减少油腻与刺激性食物', '少量多餐，观察耐受情况'] : diet,
+      hydration: hydration.isEmpty ? const ['少量多次补液，避免一次性大量饮水'] : hydration,
+      care: care.isEmpty ? const ['勤更换尿布/清洁，保持干爽', '观察皮肤是否红肿或破损'] : care,
+      avoid: avoid.isEmpty ? const ['避免高糖/高脂/刺激性食物'] : avoid,
     );
   }
 }
@@ -302,9 +301,15 @@ class UiStrings {
     if (sectionsRaw is List) {
       for (final item in sectionsRaw) {
         if (item is Map) {
+          final itemsValue = item['items'] ?? item['bullets'];
           sections.add(UiSection(
             title: item['title']?.toString() ?? '',
-            items: _stringList(item['items'], 'ui_strings.sections.items', missing),
+            iconKey: item['icon_key']?.toString() ?? '',
+            items: _stringList(
+              itemsValue,
+              'ui_strings.sections.items',
+              missing,
+            ),
           ));
         }
       }
@@ -317,9 +322,14 @@ class UiStrings {
 
 class UiSection {
   final String title;
+  final String iconKey;
   final List<String> items;
 
-  const UiSection({required this.title, required this.items});
+  const UiSection({
+    required this.title,
+    required this.iconKey,
+    required this.items,
+  });
 }
 
 List<Map<String, dynamic>> _listOfMaps(
