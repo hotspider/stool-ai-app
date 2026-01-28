@@ -80,11 +80,12 @@ app.post("/analyze", async (req, res) => {
           ]
         }
       ],
-      response_format: { type: "json_object" },
+      text: { format: { type: "json" } },
       temperature: 0.2,
       max_output_tokens: 900
     };
 
+    console.log(`[OPENAI] request model=${model} text.format=json`);
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -93,9 +94,20 @@ app.post("/analyze", async (req, res) => {
       },
       body: JSON.stringify(payload)
     });
+    console.log(`[OPENAI] response status=${response.status}`);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
+      let errorCode = "";
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorCode = errorJson?.error?.code || errorJson?.error?.type || "";
+      } catch {
+        errorCode = "";
+      }
+      if (errorCode) {
+        console.log(`[OPENAI] error code=${errorCode}`);
+      }
       return res.status(502).json({
         ok: false,
         error: "OPENAI_ERROR",
