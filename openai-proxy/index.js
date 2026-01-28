@@ -10,6 +10,14 @@ const DEFAULT_MODEL = "gpt-4.1-mini";
 app.get("/ping", (_req, res) => {
   res.json({ ok: true });
 });
+app.get("/version", (_req, res) => {
+  res.json({
+    ok: true,
+    textFormatType: "json_object",
+    commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "unknown",
+    time: new Date().toISOString()
+  });
+});
 
 app.post("/analyze", async (req, res) => {
   try {
