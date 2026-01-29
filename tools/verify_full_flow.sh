@@ -59,6 +59,23 @@ except Exception as e:
   print("model echo parse failed:", e)
 PY
 
+echo "==> schema checks"
+jq -e '
+  .schema_version == 2 and
+  (.ok == true or .ok == false) and
+  (.headline | type=="string") and
+  (.score | type=="number") and
+  (.risk_level | type=="string") and
+  (.confidence | type=="number") and
+  (.uncertainty_note | type=="string") and
+  (.stool_features | type=="object") and
+  (.reasoning_bullets | length >= 5) and
+  (.actions_today | length >= 8) and
+  (.red_flags | length >= 5) and
+  (.follow_up_questions | length >= 6) and
+  (.ui_strings.sections | length >= 4)
+' /tmp/analyze_body.json >/dev/null && echo "schema ok" || (echo "schema failed" && exit 1)
+
 echo
 echo "==> If you want real image verify:"
 echo "   VERIFY_IMG=/path/to/1.jpg $0"

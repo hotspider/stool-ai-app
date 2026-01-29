@@ -72,6 +72,33 @@ async function callOpenAI(apiKey, payload, primaryModel) {
   return first;
 }
 
+async function callOpenAIWithRetry(apiKey, basePayload, model) {
+  const attemptPayloads = [
+    basePayload,
+    {
+      ...basePayload,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: STRICT_SYSTEM_PROMPT }],
+        },
+        ...basePayload.input.filter((c) => c.role !== "system"),
+      ],
+    },
+  ];
+
+  let last = null;
+  for (let i = 0; i < attemptPayloads.length; i += 1) {
+    const payload = attemptPayloads[i];
+    const result = await callOpenAI(apiKey, payload, model);
+    last = result;
+    if (result.r.ok) {
+      return result;
+    }
+  }
+  return last;
+}
+
 // ===== Helpers =====
 function nowISO() {
   return new Date().toISOString();
@@ -165,6 +192,11 @@ App 结果页“自然变厚”：每个 section 都有多条 bullet，不再像
   "hydration_hint": "从 actions_today 派生一句话",
   "diet_advice": ["从 actions_today 派生"]
 }
+`.trim();
+
+const STRICT_SYSTEM_PROMPT = `
+你必须输出严格 JSON（不要 Markdown、不要多余文字）。输出结构必须包含 schema_version=2 的全部字段，不允许任何额外字段。
+如果不确定，请在 uncertainty_note 明确原因，但仍返回完整 JSON 对象。
 `.trim();
 
 const JSON_SCHEMA = {
@@ -275,6 +307,13 @@ function extractJsonFromText(text) {
     }
   }
   return best;
+}
+
+function sanitizeRawText(text) {
+  if (!text) return "";
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/^```(?:json)?/i, "").replace(/```$/i, "");
+  return cleaned.trim();
 }
 
 function userPromptFromBody(body) {
@@ -571,12 +610,16 @@ app.post("/analyze", async (req, res) => {
           json_schema: JSON_SCHEMA,
         },
       },
-      temperature: 0.2,
+      temperature: 0,
       max_output_tokens: 1000
     };
 
     console.log(`[OPENAI] request model=${model} text.format=json_object`);
-    const { r, raw, model: usedModel } = await callOpenAI(apiKey, payload, model);
+    const { r, raw, model: usedModel } = await callOpenAIWithRetry(
+      apiKey,
+      payload,
+      model
+    );
     console.log(`[OPENAI] response status=${r.status}`);
 
     res.setHeader("x-openai-model", usedModel);
@@ -603,10 +646,11 @@ app.post("/analyze", async (req, res) => {
     }
 
     let parsed;
+    const cleanedText = sanitizeRawText(outputText);
     try {
-      parsed = JSON.parse(outputText);
+      parsed = JSON.parse(cleanedText);
     } catch (e) {
-      const extracted = extractJsonFromText(outputText);
+      const extracted = extractJsonFromText(cleanedText);
       if (extracted) {
         try {
           parsed = JSON.parse(extracted);
@@ -619,7 +663,7 @@ app.post("/analyze", async (req, res) => {
           ok: false,
           error: "INVALID_JSON",
           message: "OpenAI returned non-JSON output",
-          raw_preview: String(outputText).slice(0, 500),
+          raw_preview: String(cleanedText).slice(0, 500),
           openai_request_id: r.headers.get("x-request-id") || "",
           model_used: usedModel,
           schema_version: 2,
