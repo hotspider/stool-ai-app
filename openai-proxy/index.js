@@ -10,9 +10,7 @@ const BUILD_ID =
   process.env.BUILD_ID ||
   (process.env.RENDER_GIT_COMMIT
     ? process.env.RENDER_GIT_COMMIT.slice(0, 7)
-    : process.env.PROXY_VERSION
-      ? process.env.PROXY_VERSION.slice(0, 7)
-      : "unknown");
+    : "unknown");
 app.use((req, res, next) => {
   res.setHeader("x-build-id", BUILD_ID);
   next();
@@ -1134,5 +1132,15 @@ app.post("/analyze", async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 10000;
-app.listen(port, () => console.log(`OpenAI proxy listening on port ${port}`));
+process.on("unhandledRejection", (err) => {
+  console.error("[FATAL] unhandledRejection", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] uncaughtException", err);
+  process.exit(1);
+});
+
+const port = Number(process.env.PORT || 10000);
+const host = "0.0.0.0";
+console.log(`[BOOT] port=${port} build_id=${BUILD_ID}`);
+app.listen(port, host, () => console.log(`OpenAI proxy listening on ${host}:${port}`));
