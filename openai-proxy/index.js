@@ -6,6 +6,7 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
 const PROXY_VERSION = process.env.RENDER_GIT_COMMIT || process.env.PROXY_VERSION || "dev";
+const { V2_SCHEMA_JSON } = require("./src/schema/v2_schema");
 const MODEL_ALLOWLIST = new Set(["gpt-5.2", "gpt-5d"]);
 
 function normalizeModel(raw, fallback) {
@@ -73,10 +74,13 @@ async function callOpenAI(apiKey, payload, primaryModel) {
 }
 
 async function callOpenAIWithRetry(apiKey, basePayload, model) {
+  const primaryModel = model;
+  const fallbackModel = getFallbackModel();
   const attemptPayloads = [
     basePayload,
     {
       ...basePayload,
+      temperature: 0,
       input: [
         {
           role: "system",
@@ -90,11 +94,26 @@ async function callOpenAIWithRetry(apiKey, basePayload, model) {
   let last = null;
   for (let i = 0; i < attemptPayloads.length; i += 1) {
     const payload = attemptPayloads[i];
-    const result = await callOpenAI(apiKey, payload, model);
+    const result = await callOpenAI(apiKey, payload, primaryModel);
     last = result;
     if (result.r.ok) {
       return result;
     }
+  }
+
+  if (fallbackModel !== primaryModel) {
+    const fallbackPayload = {
+      ...basePayload,
+      temperature: 0,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: STRICT_SYSTEM_PROMPT }],
+        },
+        ...basePayload.input.filter((c) => c.role !== "system"),
+      ],
+    };
+    return callOpenAI(apiKey, fallbackPayload, fallbackModel);
   }
   return last;
 }
@@ -201,85 +220,8 @@ const STRICT_SYSTEM_PROMPT = `
 
 const JSON_SCHEMA = {
   name: "stool_analysis_v2",
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      ok: { type: "boolean" },
-      schema_version: { type: "integer", enum: [2] },
-      headline: { type: "string" },
-      score: { type: "integer", minimum: 0, maximum: 100 },
-      risk_level: { type: "string", enum: ["low", "medium", "high", "unknown"] },
-      confidence: { type: "number", minimum: 0, maximum: 1 },
-      uncertainty_note: { type: "string" },
-      stool_features: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          bristol_type: { type: ["integer", "null"], minimum: 1, maximum: 7 },
-          color: { type: ["string", "null"] },
-          texture: { type: ["string", "null"] },
-          volume: { type: "string", enum: ["small", "medium", "large", "unknown"] },
-          visible_findings: { type: "array", items: { type: "string" } },
-        },
-        required: ["bristol_type", "color", "texture", "volume", "visible_findings"],
-      },
-      reasoning_bullets: { type: "array", items: { type: "string" } },
-      actions_today: { type: "array", items: { type: "string" } },
-      red_flags: { type: "array", items: { type: "string" } },
-      follow_up_questions: { type: "array", items: { type: "string" } },
-      ui_strings: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          summary: { type: "string" },
-          tags: { type: "array", items: { type: "string" } },
-          sections: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                title: { type: "string" },
-                icon_key: { type: "string" },
-                items: { type: "array", items: { type: "string" } },
-              },
-              required: ["title", "icon_key", "items"],
-            },
-          },
-        },
-        required: ["summary", "tags", "sections"],
-      },
-      summary: { type: "string" },
-      bristol_type: { type: ["integer", "null"], minimum: 1, maximum: 7 },
-      color: { type: ["string", "null"] },
-      texture: { type: ["string", "null"] },
-      hydration_hint: { type: "string" },
-      diet_advice: { type: "array", items: { type: "string" } },
-    },
-    required: [
-      "ok",
-      "schema_version",
-      "headline",
-      "score",
-      "risk_level",
-      "confidence",
-      "uncertainty_note",
-      "stool_features",
-      "reasoning_bullets",
-      "actions_today",
-      "red_flags",
-      "follow_up_questions",
-      "ui_strings",
-      "summary",
-      "bristol_type",
-      "color",
-      "texture",
-      "hydration_hint",
-      "diet_advice",
-    ],
-  },
   strict: true,
+  schema: V2_SCHEMA_JSON,
 };
 
 function extractJsonFromText(text) {
@@ -663,7 +605,7 @@ app.post("/analyze", async (req, res) => {
           strict: true,
         },
       },
-      temperature: 0,
+      temperature: 0.2,
       max_output_tokens: 1000
     };
 
