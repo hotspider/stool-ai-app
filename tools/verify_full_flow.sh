@@ -53,6 +53,8 @@ try:
   data = json.load(open("/tmp/analyze_body.json","r",encoding="utf-8"))
   print("x-openai-model:", model_header or "missing")
   print("model_used:", data.get("model_used"))
+  print("proxy_version:", data.get("proxy_version"))
+  print("worker_version:", data.get("worker_version"))
 except Exception as e:
   print("model echo parse failed:", e)
 PY

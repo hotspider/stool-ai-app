@@ -167,6 +167,116 @@ App 结果页“自然变厚”：每个 section 都有多条 bullet，不再像
 }
 `.trim();
 
+const JSON_SCHEMA = {
+  name: "stool_analysis_v2",
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      ok: { type: "boolean" },
+      schema_version: { type: "integer", enum: [2] },
+      headline: { type: "string" },
+      score: { type: "integer", minimum: 0, maximum: 100 },
+      risk_level: { type: "string", enum: ["low", "medium", "high", "unknown"] },
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      uncertainty_note: { type: "string" },
+      stool_features: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          bristol_type: { type: ["integer", "null"], minimum: 1, maximum: 7 },
+          color: { type: ["string", "null"] },
+          texture: { type: ["string", "null"] },
+          volume: { type: "string", enum: ["small", "medium", "large", "unknown"] },
+          visible_findings: { type: "array", items: { type: "string" } },
+        },
+        required: ["bristol_type", "color", "texture", "volume", "visible_findings"],
+      },
+      reasoning_bullets: { type: "array", items: { type: "string" } },
+      actions_today: { type: "array", items: { type: "string" } },
+      red_flags: { type: "array", items: { type: "string" } },
+      follow_up_questions: { type: "array", items: { type: "string" } },
+      ui_strings: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          summary: { type: "string" },
+          tags: { type: "array", items: { type: "string" } },
+          sections: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                title: { type: "string" },
+                icon_key: { type: "string" },
+                items: { type: "array", items: { type: "string" } },
+              },
+              required: ["title", "icon_key", "items"],
+            },
+          },
+        },
+        required: ["summary", "tags", "sections"],
+      },
+      summary: { type: "string" },
+      bristol_type: { type: ["integer", "null"], minimum: 1, maximum: 7 },
+      color: { type: ["string", "null"] },
+      texture: { type: ["string", "null"] },
+      hydration_hint: { type: "string" },
+      diet_advice: { type: "array", items: { type: "string" } },
+    },
+    required: [
+      "ok",
+      "schema_version",
+      "headline",
+      "score",
+      "risk_level",
+      "confidence",
+      "uncertainty_note",
+      "stool_features",
+      "reasoning_bullets",
+      "actions_today",
+      "red_flags",
+      "follow_up_questions",
+      "ui_strings",
+      "summary",
+      "bristol_type",
+      "color",
+      "texture",
+      "hydration_hint",
+      "diet_advice",
+    ],
+  },
+  strict: true,
+};
+
+function extractJsonFromText(text) {
+  if (!text) return "";
+  const candidates = [];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== "{") continue;
+    let depth = 0;
+    for (let j = i; j < text.length; j += 1) {
+      if (text[j] === "{") depth += 1;
+      if (text[j] === "}") depth -= 1;
+      if (depth === 0) {
+        candidates.push(text.slice(i, j + 1));
+        break;
+      }
+    }
+  }
+  let best = "";
+  for (const c of candidates) {
+    try {
+      JSON.parse(c);
+      if (c.length > best.length) best = c;
+    } catch {
+      // ignore
+    }
+  }
+  return best;
+}
+
 function userPromptFromBody(body) {
   const age = body?.age_months;
   const odor = body?.odor ?? "unknown";
@@ -455,7 +565,12 @@ app.post("/analyze", async (req, res) => {
           ]
         }
       ],
-      text: { format: { type: "json_object" } },
+      text: {
+        format: {
+          type: "json_schema",
+          json_schema: JSON_SCHEMA,
+        },
+      },
       temperature: 0.2,
       max_output_tokens: 1000
     };
@@ -491,13 +606,25 @@ app.post("/analyze", async (req, res) => {
     try {
       parsed = JSON.parse(outputText);
     } catch (e) {
-      return res.status(502).json({
-        ok: false,
-        error: "INVALID_JSON",
-        message: "OpenAI returned non-JSON output",
-        model_used: usedModel,
-        schema_version: 2,
-      });
+      const extracted = extractJsonFromText(outputText);
+      if (extracted) {
+        try {
+          parsed = JSON.parse(extracted);
+        } catch {
+          parsed = null;
+        }
+      }
+      if (!parsed) {
+        return res.status(502).json({
+          ok: false,
+          error: "INVALID_JSON",
+          message: "OpenAI returned non-JSON output",
+          raw_preview: String(outputText).slice(0, 500),
+          openai_request_id: r.headers.get("x-request-id") || "",
+          model_used: usedModel,
+          schema_version: 2,
+        });
+      }
     }
 
     const normalized = normalizeResult(parsed);
