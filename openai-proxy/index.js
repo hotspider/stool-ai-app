@@ -316,6 +316,57 @@ function sanitizeRawText(text) {
   return cleaned.trim();
 }
 
+function buildModelOutputInvalid(usedModel, requestId) {
+  return {
+    ok: false,
+    error_code: "MODEL_OUTPUT_INVALID",
+    error: "MODEL_OUTPUT_INVALID",
+    message: "Model returned non-JSON output",
+    schema_version: 2,
+    proxy_version: PROXY_VERSION,
+    model_used: usedModel,
+    headline: "模型输出异常，请重试",
+    score: 0,
+    risk_level: "unknown",
+    confidence: 0,
+    uncertainty_note: "模型输出未按 JSON 结构返回，可稍后重试或更换清晰图片。",
+    stool_features: {
+      bristol_type: null,
+      color: null,
+      texture: null,
+      volume: "unknown",
+      visible_findings: [],
+    },
+    reasoning_bullets: [],
+    actions_today: [],
+    red_flags: [],
+    follow_up_questions: [],
+    ui_strings: {
+      summary: "",
+      tags: [],
+      sections: [
+        {
+          title: "重试建议",
+          icon_key: "retry",
+          items: ["稍后再试", "检查网络连接", "更换清晰图片"],
+        },
+        {
+          title: "如何拍/如何裁剪",
+          icon_key: "camera",
+          items: ["光线充足", "对焦清晰", "目标占画面 50% 以上"],
+        },
+      ],
+    },
+    summary: "",
+    bristol_type: null,
+    color: null,
+    texture: null,
+    hydration_hint: "",
+    diet_advice: [],
+    openai_request_id: requestId || "",
+  };
+}
+
 function userPromptFromBody(body) {
   const age = body?.age_months;
   const odor = body?.odor ?? "unknown";
@@ -614,7 +665,7 @@ app.post("/analyze", async (req, res) => {
       max_output_tokens: 1000
     };
 
-    console.log(`[OPENAI] request model=${model} text.format=json_object`);
+    console.log(`[OPENAI] request model=${model} text.format=json_schema`);
     const { r, raw, model: usedModel } = await callOpenAIWithRetry(
       apiKey,
       payload,
@@ -659,15 +710,10 @@ app.post("/analyze", async (req, res) => {
         }
       }
       if (!parsed) {
-        return res.status(502).json({
-          ok: false,
-          error: "INVALID_JSON",
-          message: "OpenAI returned non-JSON output",
-          raw_preview: String(cleanedText).slice(0, 500),
-          openai_request_id: r.headers.get("x-request-id") || "",
-          model_used: usedModel,
-          schema_version: 2,
-        });
+        const requestId = r.headers.get("x-request-id") || "";
+        const fallback = buildModelOutputInvalid(usedModel, requestId);
+        fallback.raw_preview = String(cleanedText).slice(0, 500);
+        return res.status(200).json(fallback);
       }
     }
 
