@@ -176,7 +176,7 @@ const SYSTEM_PROMPT = `
 写作结构强约束：
 1. 必须先输出“一句话结论（先说重点）”（写进 headline / ui_strings.longform.conclusion），明确：是否像腹泻/是否像感染/更像什么。
 2. “具体怎么看这个便便”必须分为：形态/颜色/质地细节，并且每部分都要写“为什么会这样”（写进 interpretation.why_*，每项>=2）。
-3. 必须输出“结合你填写的情况（很关键）”，并引用 context_input（若提供：recent_foods、recent_drinks、精神、次数、发热、腹痛等），写入 interpretation.how_context_affects（>=3）。
+3. 必须输出“结合你填写的情况（很关键）”，并引用 context（foods_eaten, drinks_taken, mood_state, other_notes），写入 interpretation.how_context_affects（>=3）。
 4. “可能原因”必须按常见程度排序（写入 possible_causes 与 reasoning_bullets，possible_causes>=3，reasoning_bullets>=5）。
 5. “现在需要做什么”必须可执行，分 ✅可以做 / ❌少一点 / 👀观察指标（分别落在 actions_today.*）。
 6. “什么时候需要警惕”必须给明确红旗（red_flags >=5，object 结构 {title, detail}）。
@@ -184,6 +184,19 @@ const SYSTEM_PROMPT = `
 8. 语言风格：像儿科医生对家长说话，清晰克制、不吓人；禁止空话；禁止只输出泛泛建议。
 9. 必须填满 required 数组长度下限，任何数组不允许为空，避免使用 "unknown" 或 “信息不足” 作为主结论文本。
 10. 若图片无法判断，必须明确写出“缺什么信息/建议怎么拍/建议补充什么”，并仍返回完整 v2 结构（ok=false，但字段齐全）。
+
+你会收到两类信息：
+1) image（图片内容：可能是大便，也可能不是）
+2) context（用户补充信息，可为空）：foods_eaten, drinks_taken, mood_state, other_notes
+
+强制要求：
+- 必须读取并使用 context（如果 context 为空，要在 context_summary 中明确写“未提供补充信息，因此只按图片判断”）。
+- 输出中必须包含：
+  - context_summary：用一段话概括用户补充信息，并解释它如何影响判断（或为何无法影响）。
+  - analysis_basis.image_only：仅基于图片可观察到的依据（>=4条）
+  - analysis_basis.combined_reasoning：结合图片 + context 的推理链（>=5条）
+  - input_echo.context：原样回显 context（便于前端验收）
+- 若 context 中包含饮食/饮水/精神状态/其他症状，请在 reasoning_bullets 和 actions_today 中体现“因这些信息而调整的判断/建议”。
 
 二阶段分析输出模板（必须体现为字段内容）：
 1) 一句话结论（先说重点）：写入 doctor_explanation.one_sentence_conclusion 与 headline。
@@ -201,6 +214,7 @@ const SYSTEM_PROMPT = `
 - interpretation: overall_judgement, why_shape[], why_color[], why_texture[], how_context_affects[], confidence_explain
 - reasoning_bullets[], actions_today{diet,hydration,care,avoid,observe}, red_flags[{title,detail}], follow_up_questions[]
 - ui_strings{summary,tags,sections, longform{conclusion,how_to_read,context,causes,todo,red_flags,reassure}}
+- context_summary, analysis_basis{image_only, combined_reasoning}, input_echo{context}
 - model_used, proxy_version, worker_version?, context_input?
 
 只输出 JSON，不要 Markdown。
@@ -320,13 +334,13 @@ function userPromptFromBody(body) {
   const odor = body?.odor ?? "unknown";
   const strain = body?.pain_or_strain;
   const diet = body?.diet_keywords ?? "";
-  const context = body?.context ?? body?.context_input;
+  const context = body?.context ?? body?.context_input ?? {};
   return `
 幼儿月龄: ${age ?? "unknown"}
 气味: ${odor}
 是否疼痛/费力: ${typeof strain === "boolean" ? String(strain) : "unknown"}
 最近饮食关键词: ${diet || "unknown"}
-补充信息(context): ${context ? JSON.stringify(context) : "none"}
+补充信息(context): ${JSON.stringify(context)}
 
 请基于图片和以上信息给出分析与建议。
 `.trim();
@@ -379,6 +393,25 @@ function buildDefaultResult() {
       why_texture: ["质地可能受水分与拍摄焦距影响", "需结合是否拉稀或成形判断"],
       how_context_affects: ["未提供补充信息，无法判断饮食与症状关联", "若近期有发热/腹痛需提高警惕", "若精神食欲正常则更偏功能性变化"],
       confidence_explain: "缺少完整补充信息，置信度有限。",
+    },
+    context_summary: "未提供补充信息，仅基于图片判断。",
+    analysis_basis: {
+      image_only: [
+        "图片中可见的形态与质地特征",
+        "颜色分布与光照条件下的表现",
+        "是否可见明显异物/血丝/粘液",
+        "整体成形度与水样分离情况",
+      ],
+      combined_reasoning: [
+        "图片特征与补充信息综合后更偏向功能性变化",
+        "饮食与饮水情况可能影响颜色与质地",
+        "精神状态与症状有助判断是否存在感染迹象",
+        "如无发热/呕吐更支持可观察的短期变化",
+        "若补充信息不足需保留不确定性",
+      ],
+    },
+    input_echo: {
+      context: {},
     },
     reasoning_bullets: [],
     actions_today: {
@@ -493,6 +526,26 @@ function normalizeResult(parsed) {
   out.input_context = typeof out.input_context === "object" && out.input_context
     ? out.input_context
     : undefined;
+  out.context_summary = typeof out.context_summary === "string" && out.context_summary.trim()
+    ? out.context_summary.trim()
+    : base.context_summary;
+  const basis = { ...base.analysis_basis, ...(out.analysis_basis || {}) };
+  out.analysis_basis = {
+    image_only: ensureMinItems(
+      Array.isArray(basis.image_only) ? basis.image_only.map(String) : [],
+      4,
+      base.analysis_basis.image_only
+    ),
+    combined_reasoning: ensureMinItems(
+      Array.isArray(basis.combined_reasoning) ? basis.combined_reasoning.map(String) : [],
+      5,
+      base.analysis_basis.combined_reasoning
+    ),
+  };
+  const echo = out.input_echo && typeof out.input_echo === "object" ? out.input_echo : base.input_echo;
+  out.input_echo = {
+    context: echo && typeof echo.context === "object" ? echo.context : {},
+  };
   out.score = Number.isFinite(Number(out.score)) ? Number(out.score) : base.score;
   out.risk_level = ["low", "medium", "high"].includes(out.risk_level)
     ? out.risk_level
@@ -1029,6 +1082,11 @@ app.post("/analyze", async (req, res) => {
     }
     if ((req.body?.context || req.body?.context_input) && !normalized.input_context) {
       normalized.input_context = req.body.context || req.body.context_input;
+    }
+    if (!normalized.input_echo || typeof normalized.input_echo !== "object") {
+      normalized.input_echo = { context: req.body?.context || req.body?.context_input || {} };
+    } else if (!normalized.input_echo.context || typeof normalized.input_echo.context !== "object") {
+      normalized.input_echo.context = req.body?.context || req.body?.context_input || {};
     }
     res.setHeader("schema_version", String(normalized.schema_version || 2));
     return res.json(normalized);

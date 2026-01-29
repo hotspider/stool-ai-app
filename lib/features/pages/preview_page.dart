@@ -253,8 +253,8 @@ class _PreviewPageState extends State<PreviewPage> {
     try {
       final result = await ApiService.analyzeImage(
         imageBytes: _bytes!,
-        odor: _ctx.odor ?? 'none',
-        painOrStrain: _ctx.painOrStrain ?? false,
+        odor: 'none',
+        painOrStrain: false,
         context: _ctx,
       );
       if (!mounted) {
@@ -320,47 +320,21 @@ class _PreviewPageState extends State<PreviewPage> {
       return '你填写的情况显示：未补充额外信息。';
     }
     final parts = <String>[];
+    final foods = context['foods_eaten']?.toString();
+    if (foods != null && foods.trim().isNotEmpty) {
+      parts.add('吃了：$foods');
+    }
+    final drinks = context['drinks_taken']?.toString();
+    if (drinks != null && drinks.trim().isNotEmpty) {
+      parts.add('喝了：$drinks');
+    }
     final mood = context['mood_state']?.toString();
-    if (mood == 'good') parts.add('精神状态良好');
-    if (mood == 'normal') parts.add('精神状态一般');
-    if (mood == 'poor') parts.add('精神状态偏差');
-    final appetite = context['appetite']?.toString();
-    if (appetite == 'normal') parts.add('食欲正常');
-    if (appetite == 'slightly_low') parts.add('食欲稍差');
-    if (appetite == 'poor') parts.add('食欲明显下降');
-    if (context['poop_count_24h'] != null) {
-      parts.add('24 小时内排便 ${context['poop_count_24h']} 次');
+    if (mood != null && mood.trim().isNotEmpty) {
+      parts.add('精神状态：$mood');
     }
-    if (context['pain_or_strain'] == true) {
-      parts.add('排便时有用力/哭闹');
-    } else {
-      parts.add('排便时无明显不适');
-    }
-    final hydration = context['hydration_intake']?.toString();
-    if (hydration == 'normal') parts.add('饮水正常');
-    if (hydration == 'low') parts.add('饮水偏少');
-    if (hydration == 'high') parts.add('饮水偏多');
-    final warning = context['warning_signs'];
-    if (warning is List && warning.isNotEmpty) {
-      final mapped = warning.map((item) {
-        switch (item.toString()) {
-          case 'fever':
-            return '发热';
-          case 'vomiting':
-            return '呕吐';
-          case 'abdominal_pain':
-            return '明显腹痛';
-          case 'blood_or_mucus':
-            return '血丝/粘液';
-          case 'black_or_pale':
-            return '黑便/灰白便';
-          default:
-            return item.toString();
-        }
-      }).toList();
-      parts.add('出现${mapped.join('、')}');
-    } else {
-      parts.add('未出现发热/呕吐/腹痛等危险信号');
+    final notes = context['other_notes']?.toString();
+    if (notes != null && notes.trim().isNotEmpty) {
+      parts.add('其他：$notes');
     }
     return '你填写的情况显示：${parts.join('，')}。';
   }

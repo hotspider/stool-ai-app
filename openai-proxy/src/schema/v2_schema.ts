@@ -16,13 +16,16 @@ export const V2_SCHEMA_JSON = {
     "doctor_explanation",
     "possible_causes",
     "interpretation",
+    "context_summary",
+    "analysis_basis",
     "reasoning_bullets",
     "actions_today",
     "red_flags",
     "follow_up_questions",
     "ui_strings",
     "model_used",
-    "proxy_version"
+    "proxy_version",
+    "input_echo"
   ],
   "properties": {
     "ok": { "type": "boolean" },
@@ -105,6 +108,33 @@ export const V2_SCHEMA_JSON = {
         "why_texture": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 2 },
         "how_context_affects": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 3 },
         "confidence_explain": { "type": "string", "minLength": 1 }
+      }
+    },
+    "context_summary": { "type": "string", "minLength": 10 },
+    "analysis_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image_only", "combined_reasoning"],
+      "properties": {
+        "image_only": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 4 },
+        "combined_reasoning": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 5 }
+      }
+    },
+    "input_echo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context"],
+      "properties": {
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "foods_eaten": { "type": "string" },
+            "drinks_taken": { "type": "string" },
+            "mood_state": { "type": "string" },
+            "other_notes": { "type": "string" }
+          }
+        }
       }
     },
     "doctor_explanation": {

@@ -778,6 +778,12 @@ class _ResultPageState extends State<ResultPage> {
 
     final widgets = <Widget>[];
 
+    final contextEchoCard = _buildContextEchoCard(structured.inputContext);
+    if (contextEchoCard != null) {
+      widgets.add(const SizedBox(height: AppSpace.s12));
+      widgets.add(contextEchoCard);
+    }
+
     if (showGuidance) {
       widgets.add(const SizedBox(height: AppSpace.s12));
       widgets.add(
@@ -996,69 +1002,69 @@ class _ResultPageState extends State<ResultPage> {
       return '你未填写补充信息，本次仅基于图片进行判断。';
     }
     final parts = <String>[];
+    final foods = ctx['foods_eaten'];
+    if (foods != null && foods.toString().trim().isNotEmpty) {
+      parts.add('吃了什么：$foods');
+    }
+    final drinks = ctx['drinks_taken'];
+    if (drinks != null && drinks.toString().trim().isNotEmpty) {
+      parts.add('喝了什么：$drinks');
+    }
     final mood = ctx['mood_state'];
-    if (mood == 'good') parts.add('精神状态：良好');
-    if (mood == 'normal') parts.add('精神状态：一般');
-    if (mood == 'poor') parts.add('精神状态：偏差');
-
-    final appetite = ctx['appetite'];
-    if (appetite == 'normal') parts.add('食欲：正常');
-    if (appetite == 'slightly_low') parts.add('食欲：略少');
-    if (appetite == 'poor') parts.add('食欲：明显差');
-
-    final count = ctx['poop_count_24h'];
-    if (count != null) parts.add('24小时排便：$count 次');
-
-    final pain = ctx['pain_or_strain'];
-    if (pain == true) parts.add('排便：有明显用力/不适');
-    if (pain == false) parts.add('排便：无明显不适');
-
-    final diet = (ctx['diet_tags'] as List?)?.cast<String>();
-    if (diet != null && diet.isNotEmpty) {
-      parts.add('近期饮食：${diet.map(_dietTagLabel).join('、')}');
+    if (mood != null && mood.toString().trim().isNotEmpty) {
+      parts.add('精神状态：$mood');
     }
-
-    final hyd = ctx['hydration_intake'];
-    if (hyd == 'normal') parts.add('饮水：正常');
-    if (hyd == 'low') parts.add('饮水：偏少');
-    if (hyd == 'high') parts.add('饮水：偏多');
-
-    final warn = (ctx['warning_signs'] as List?)?.cast<String>();
-    if (warn != null && warn.isNotEmpty) {
-      parts.add('危险信号：已勾选（建议重点关注）');
+    final notes = ctx['other_notes'];
+    if (notes != null && notes.toString().trim().isNotEmpty) {
+      parts.add('其他：$notes');
     }
-
-    final odor = ctx['odor'];
-    if (odor == 'none') parts.add('气味：无明显');
-    if (odor == 'stronger') parts.add('气味：比平时重');
-    if (odor == 'foul') parts.add('气味：非常臭/刺鼻');
 
     return parts.join('；');
   }
 
-  String _dietTagLabel(String raw) {
-    switch (raw) {
-      case 'fruit':
-        return '水果多';
-      case 'vegetable':
-        return '绿叶菜多';
-      case 'meat':
-        return '肉类多';
-      case 'soup':
-        return '汤水多';
-      case 'milk':
-        return '奶/配方奶';
-      case 'yogurt':
-        return '酸奶';
-      case 'cold':
-        return '冷饮/凉食';
-      case 'oily':
-        return '油腻';
-      case 'new_food':
-        return '新加辅食';
-      default:
-        return raw;
+  Widget? _buildContextEchoCard(Map<String, dynamic>? ctx) {
+    if (ctx == null || ctx.isEmpty) {
+      return null;
     }
+    final foods = ctx['foods_eaten']?.toString().trim();
+    final drinks = ctx['drinks_taken']?.toString().trim();
+    final mood = ctx['mood_state']?.toString().trim();
+    final notes = ctx['other_notes']?.toString().trim();
+    if ((foods ?? '').isEmpty &&
+        (drinks ?? '').isEmpty &&
+        (mood ?? '').isEmpty &&
+        (notes ?? '').isEmpty) {
+      return null;
+    }
+    final items = <MapEntry<String, String>>[
+      MapEntry('吃了什么', foods?.isNotEmpty == true ? foods! : '未填写'),
+      MapEntry('喝了什么', drinks?.isNotEmpty == true ? drinks! : '未填写'),
+      MapEntry('精神状态', mood?.isNotEmpty == true ? mood! : '未填写'),
+      MapEntry('其他', notes?.isNotEmpty == true ? notes! : '未填写'),
+    ];
+    return SoftCard(
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        title: Text('补充信息回显', style: AppText.section),
+        children: items
+            .map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpace.s8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 80,
+                      child: Text(entry.key, style: AppText.caption),
+                    ),
+                    Expanded(child: Text(entry.value, style: AppText.body)),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
   }
 
   String _featureLabelOrUnknown(AppLocalizations l10n, String? value) {

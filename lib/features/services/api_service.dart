@@ -36,9 +36,9 @@ class ApiService {
         'odor': odor,
         'pain_or_strain': painOrStrain,
         'diet_keywords': dietKeywords,
-        if (context != null && !context.isEmpty) 'context': context.toJson(),
+        'context': context?.toJson() ?? {},
       };
-      debugPrint('[ApiService] context=${context?.toJson()}');
+      debugPrint('[Analyze] context=${jsonEncode(bodyMap['context'])}');
       final jsonBody = jsonEncode(bodyMap);
       const headers = {
         'Content-Type': 'application/json; charset=utf-8',

@@ -146,15 +146,21 @@ class StoolAnalysisResult {
     final uncertaintyNote = _string('uncertainty_note');
     final isStoolImage = json['is_stool_image'] != false;
     final explanation = json['explanation']?.toString() ?? '';
-    final inputContext = json['input_context'] is Map
-        ? (json['input_context'] as Map)
-            .map((k, v) => MapEntry(k.toString(), v))
-        : json['context'] is Map
-            ? (json['context'] as Map).map((k, v) => MapEntry(k.toString(), v))
-            : json['context_input'] is Map
-                ? (json['context_input'] as Map)
-                    .map((k, v) => MapEntry(k.toString(), v))
-                : null;
+    Map<String, dynamic>? inputContext;
+    final inputEcho = json['input_echo'];
+    if (inputEcho is Map && inputEcho['context'] is Map) {
+      inputContext = (inputEcho['context'] as Map)
+          .map((k, v) => MapEntry(k.toString(), v));
+    } else if (json['input_context'] is Map) {
+      inputContext = (json['input_context'] as Map)
+          .map((k, v) => MapEntry(k.toString(), v));
+    } else if (json['context'] is Map) {
+      inputContext =
+          (json['context'] as Map).map((k, v) => MapEntry(k.toString(), v));
+    } else if (json['context_input'] is Map) {
+      inputContext = (json['context_input'] as Map)
+          .map((k, v) => MapEntry(k.toString(), v));
+    }
 
     StoolFeatures stoolFeatures;
     final stoolRaw = json['stool_features'];
