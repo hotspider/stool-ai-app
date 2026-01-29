@@ -50,6 +50,7 @@ def main():
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "User-Agent": "curl/8.6.0",
     }
     verify_token = os.environ.get("VERIFY_TOKEN", "").strip()
     if verify_token:
