@@ -36,6 +36,7 @@ class RemoteAnalyzer implements Analyzer {
         'odor': inputs.odor,
         'pain_or_strain': inputs.painOrStrain,
         'diet_keywords': inputs.dietKeywords,
+        if (inputs.contextInput != null) 'context_input': inputs.contextInput,
         'lang': LocaleHelper.currentLanguageCode(),
       });
       final structured = StoolAnalysisResult.parse(response);

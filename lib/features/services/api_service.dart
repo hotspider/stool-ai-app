@@ -23,6 +23,7 @@ class ApiService {
     String odor = '',
     bool painOrStrain = false,
     String dietKeywords = '',
+    Map<String, dynamic>? contextInput,
   }) async {
     debugPrint('ApiService analyze sending request');
     final url = Uri.parse('$_baseUrl/analyze');
@@ -34,6 +35,8 @@ class ApiService {
         'odor': odor,
         'pain_or_strain': painOrStrain,
         'diet_keywords': dietKeywords,
+        if (contextInput != null && contextInput.isNotEmpty)
+          'context_input': contextInput,
       };
       final jsonBody = jsonEncode(bodyMap);
       const headers = {

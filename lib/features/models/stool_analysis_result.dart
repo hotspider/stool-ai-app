@@ -20,6 +20,7 @@ class StoolAnalysisResult {
   final double confidence;
   final String uncertaintyNote;
   final StoolFeatures stoolFeatures;
+  final Interpretation interpretation;
   final List<String> reasoningBullets;
   final ActionsToday actionsToday;
   final List<RedFlagItem> redFlags;
@@ -43,6 +44,7 @@ class StoolAnalysisResult {
     required this.confidence,
     required this.uncertaintyNote,
     required this.stoolFeatures,
+    required this.interpretation,
     required this.reasoningBullets,
     required this.actionsToday,
     required this.redFlags,
@@ -137,6 +139,10 @@ class StoolAnalysisResult {
       _map('stool_features'),
       missing,
     );
+    final interpretation = Interpretation.parse(
+      _map('interpretation'),
+      missing,
+    );
     final reasoningBullets = _list('reasoning_bullets');
     final actionsTodayRaw = ActionsToday.parse(_map('actions_today'), missing);
     final actionsToday = actionsTodayRaw.withDefaults();
@@ -173,6 +179,7 @@ class StoolAnalysisResult {
         confidence: confidence,
         uncertaintyNote: uncertaintyNote,
         stoolFeatures: stoolFeatures,
+        interpretation: interpretation,
         reasoningBullets: reasoningBullets,
         actionsToday: actionsToday,
         redFlags: redFlags,
@@ -194,14 +201,36 @@ class StoolFeatures {
   final int? bristolType;
   final String? color;
   final String? texture;
+  final String bristolRange;
+  final String shapeDesc;
+  final String colorDesc;
+  final String textureDesc;
   final String volume;
+  final String wateriness;
+  final String mucus;
+  final String foam;
+  final String blood;
+  final String undigestedFood;
+  final String separationLayers;
+  final String odorLevel;
   final List<String> visibleFindings;
 
   const StoolFeatures({
     required this.bristolType,
     required this.color,
     required this.texture,
+    required this.bristolRange,
+    required this.shapeDesc,
+    required this.colorDesc,
+    required this.textureDesc,
     required this.volume,
+    required this.wateriness,
+    required this.mucus,
+    required this.foam,
+    required this.blood,
+    required this.undigestedFood,
+    required this.separationLayers,
+    required this.odorLevel,
     required this.visibleFindings,
   });
 
@@ -214,15 +243,31 @@ class StoolFeatures {
       missing.add('stool_features.bristol_type');
     }
 
-    final color = json['color']?.toString();
-    if (color == null) missing.add('stool_features.color');
-    final texture = json['texture']?.toString();
-    if (texture == null) missing.add('stool_features.texture');
+    final colorDesc = json['color_desc']?.toString() ?? json['color']?.toString();
+    if (colorDesc == null || colorDesc.isEmpty) {
+      missing.add('stool_features.color_desc');
+    }
+    final textureDesc = json['texture_desc']?.toString() ?? json['texture']?.toString();
+    if (textureDesc == null || textureDesc.isEmpty) {
+      missing.add('stool_features.texture_desc');
+    }
+    final shapeDesc = json['shape_desc']?.toString() ?? '';
+    if (shapeDesc.isEmpty) missing.add('stool_features.shape_desc');
+    final bristolRange = json['bristol_range']?.toString() ?? '';
+    if (bristolRange.isEmpty) missing.add('stool_features.bristol_range');
 
     final volumeRaw = json['volume']?.toString() ?? 'unknown';
     final volume = ['small', 'medium', 'large', 'unknown'].contains(volumeRaw)
         ? volumeRaw
         : 'unknown';
+
+    final wateriness = json['wateriness']?.toString() ?? 'none';
+    final mucus = json['mucus']?.toString() ?? 'none';
+    final foam = json['foam']?.toString() ?? 'none';
+    final blood = json['blood']?.toString() ?? 'none';
+    final undigestedFood = json['undigested_food']?.toString() ?? 'none';
+    final separationLayers = json['separation_layers']?.toString() ?? 'none';
+    final odorLevel = json['odor_level']?.toString() ?? 'unknown';
 
     final findings = json['visible_findings'];
     final visibleFindings = findings is List
@@ -232,10 +277,59 @@ class StoolFeatures {
 
     return StoolFeatures(
       bristolType: bristolType,
-      color: color,
-      texture: texture,
+      color: colorDesc,
+      texture: textureDesc,
+      bristolRange: bristolRange,
+      shapeDesc: shapeDesc,
+      colorDesc: colorDesc ?? '',
+      textureDesc: textureDesc ?? '',
       volume: volume,
+      wateriness: wateriness,
+      mucus: mucus,
+      foam: foam,
+      blood: blood,
+      undigestedFood: undigestedFood,
+      separationLayers: separationLayers,
+      odorLevel: odorLevel,
       visibleFindings: visibleFindings,
+    );
+  }
+}
+
+class Interpretation {
+  final String overallJudgement;
+  final List<String> whyShape;
+  final List<String> whyColor;
+  final List<String> whyTexture;
+  final List<String> howContextAffects;
+  final String confidenceExplain;
+
+  const Interpretation({
+    required this.overallJudgement,
+    required this.whyShape,
+    required this.whyColor,
+    required this.whyTexture,
+    required this.howContextAffects,
+    required this.confidenceExplain,
+  });
+
+  static Interpretation parse(Map<String, dynamic> json, List<String> missing) {
+    final overall = json['overall_judgement']?.toString() ?? '';
+    if (overall.isEmpty) missing.add('interpretation.overall_judgement');
+    final whyShape = _stringList(json['why_shape'], 'interpretation.why_shape', missing);
+    final whyColor = _stringList(json['why_color'], 'interpretation.why_color', missing);
+    final whyTexture = _stringList(json['why_texture'], 'interpretation.why_texture', missing);
+    final howContext =
+        _stringList(json['how_context_affects'], 'interpretation.how_context_affects', missing);
+    final confidenceExplain = json['confidence_explain']?.toString() ?? '';
+    if (confidenceExplain.isEmpty) missing.add('interpretation.confidence_explain');
+    return Interpretation(
+      overallJudgement: overall,
+      whyShape: whyShape,
+      whyColor: whyColor,
+      whyTexture: whyTexture,
+      howContextAffects: howContext,
+      confidenceExplain: confidenceExplain,
     );
   }
 }
@@ -245,12 +339,14 @@ class ActionsToday {
   final List<String> hydration;
   final List<String> care;
   final List<String> avoid;
+  final List<String> observe;
 
   const ActionsToday({
     required this.diet,
     required this.hydration,
     required this.care,
     required this.avoid,
+    required this.observe,
   });
 
   static ActionsToday parse(Map<String, dynamic> json, List<String> missing) {
@@ -259,16 +355,34 @@ class ActionsToday {
         _stringList(json['hydration'], 'actions_today.hydration', missing);
     final care = _stringList(json['care'], 'actions_today.care', missing);
     final avoid = _stringList(json['avoid'], 'actions_today.avoid', missing);
+    final observe =
+        _stringList(json['observe'], 'actions_today.observe', missing);
     return ActionsToday(
-        diet: diet, hydration: hydration, care: care, avoid: avoid);
+      diet: diet,
+      hydration: hydration,
+      care: care,
+      avoid: avoid,
+      observe: observe,
+    );
   }
 
   ActionsToday withDefaults() {
     return ActionsToday(
-      diet: diet.isEmpty ? const ['清淡饮食，减少油腻与刺激性食物', '少量多餐，观察耐受情况'] : diet,
-      hydration: hydration.isEmpty ? const ['少量多次补液，避免一次性大量饮水'] : hydration,
-      care: care.isEmpty ? const ['勤更换尿布/清洁，保持干爽', '观察皮肤是否红肿或破损'] : care,
-      avoid: avoid.isEmpty ? const ['避免高糖/高脂/刺激性食物'] : avoid,
+      diet: diet.isEmpty
+          ? const ['清淡饮食，减少油腻与刺激性食物', '少量多餐，观察耐受情况', '适量软熟蔬果补充']
+          : diet,
+      hydration: hydration.isEmpty
+          ? const ['少量多次补液，避免一次性大量饮水', '观察尿量与尿色变化', '必要时口服补液盐']
+          : hydration,
+      care: care.isEmpty
+          ? const ['勤更换尿布/清洁，保持干爽', '观察皮肤是否红肿或破损', '记录排便次数与性状变化']
+          : care,
+      avoid: avoid.isEmpty
+          ? const ['避免高糖/高脂/刺激性食物', '减少冰冷饮品', '避免一次性大量进食']
+          : avoid,
+      observe: observe.isEmpty
+          ? const ['精神与食欲是否下降', '排便次数是否增多', '是否伴随发热或呕吐']
+          : observe,
     );
   }
 }
@@ -293,11 +407,13 @@ class UiStrings {
   final String summary;
   final List<String> tags;
   final List<UiSection> sections;
+  final UiLongform longform;
 
   const UiStrings({
     required this.summary,
     required this.tags,
     required this.sections,
+    required this.longform,
   });
 
   static UiStrings parse(Map<String, dynamic> json, List<String> missing) {
@@ -324,7 +440,67 @@ class UiStrings {
     } else {
       missing.add('ui_strings.sections');
     }
-    return UiStrings(summary: summary, tags: tags, sections: sections);
+    final longformMap = json['longform'];
+    UiLongform longform = const UiLongform.empty();
+    if (longformMap is Map) {
+      longform = UiLongform.parse(
+        longformMap.map((k, v) => MapEntry(k.toString(), v)),
+        missing,
+      );
+    }
+    return UiStrings(
+      summary: summary,
+      tags: tags,
+      sections: sections,
+      longform: longform,
+    );
+  }
+}
+
+class UiLongform {
+  final String conclusion;
+  final String howToRead;
+  final String context;
+  final String causes;
+  final String todo;
+  final String redFlags;
+  final String reassure;
+
+  const UiLongform({
+    required this.conclusion,
+    required this.howToRead,
+    required this.context,
+    required this.causes,
+    required this.todo,
+    required this.redFlags,
+    required this.reassure,
+  });
+
+  const UiLongform.empty()
+      : conclusion = '',
+        howToRead = '',
+        context = '',
+        causes = '',
+        todo = '',
+        redFlags = '',
+        reassure = '';
+
+  static UiLongform parse(Map<String, dynamic> json, List<String> missing) {
+    String _field(String key) {
+      final value = json[key]?.toString() ?? '';
+      if (value.isEmpty) missing.add('ui_strings.longform.$key');
+      return value;
+    }
+
+    return UiLongform(
+      conclusion: _field('conclusion'),
+      howToRead: _field('how_to_read'),
+      context: _field('context'),
+      causes: _field('causes'),
+      todo: _field('todo'),
+      redFlags: _field('red_flags'),
+      reassure: _field('reassure'),
+    );
   }
 }
 

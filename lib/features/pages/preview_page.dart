@@ -28,6 +28,18 @@ class PreviewPage extends StatefulWidget {
 
 class _PreviewPageState extends State<PreviewPage> {
   final ImageValidator _validator = BasicImageValidator();
+  final TextEditingController _stoolTimesController = TextEditingController();
+  final TextEditingController _otherNotesController = TextEditingController();
+  final Set<String> _selectedFoods = {};
+  final Set<String> _selectedDrinks = {};
+  final Set<String> _selectedOther = {};
+  String? _moodEnergy;
+  String? _appetite;
+  String? _sleep;
+  bool _fever = false;
+  bool _vomit = false;
+  bool _bellyPain = false;
+  int? _stoolTimes24h;
   Uint8List? _bytes;
   bool _isValidating = false;
   bool _isAnalyzing = false;
@@ -40,6 +52,13 @@ class _PreviewPageState extends State<PreviewPage> {
     if (_bytes != null) {
       _validate();
     }
+  }
+
+  @override
+  void dispose() {
+    _stoolTimesController.dispose();
+    _otherNotesController.dispose();
+    super.dispose();
   }
 
   Future<void> _validate() async {
@@ -244,7 +263,10 @@ class _PreviewPageState extends State<PreviewPage> {
       _isAnalyzing = true;
     });
     try {
-      final result = await ApiService.analyzeImage(imageBytes: _bytes!);
+      final result = await ApiService.analyzeImage(
+        imageBytes: _bytes!,
+        contextInput: _buildContextInput(),
+      );
       if (!mounted) {
         return;
       }
@@ -299,6 +321,96 @@ class _PreviewPageState extends State<PreviewPage> {
         });
       }
     }
+  }
+
+  Map<String, dynamic>? _buildContextInput() {
+    final hasAny = _selectedFoods.isNotEmpty ||
+        _selectedDrinks.isNotEmpty ||
+        _selectedOther.isNotEmpty ||
+        _moodEnergy != null ||
+        _appetite != null ||
+        _sleep != null ||
+        _stoolTimes24h != null ||
+        _otherNotesController.text.trim().isNotEmpty ||
+        _fever ||
+        _vomit ||
+        _bellyPain;
+    if (!hasAny) {
+      return null;
+    }
+    final context = <String, dynamic>{
+      if (_selectedFoods.isNotEmpty) 'recent_foods': _selectedFoods.toList(),
+      if (_selectedDrinks.isNotEmpty) 'recent_drinks': _selectedDrinks.toList(),
+      if (_moodEnergy != null) 'mood_energy': _moodEnergy,
+      if (_appetite != null) 'appetite': _appetite,
+      if (_sleep != null) 'sleep': _sleep,
+      'fever': _fever,
+      'vomit': _vomit,
+      'belly_pain': _bellyPain,
+      if (_stoolTimes24h != null) 'stool_times_24h': _stoolTimes24h,
+      if (_selectedOther.contains('受凉')) 'cold_exposure': true,
+      if (_selectedOther.isNotEmpty)
+        'recent_events': _selectedOther.where((e) => e != '受凉').toList(),
+      if (_otherNotesController.text.trim().isNotEmpty)
+        'other_notes': _otherNotesController.text.trim(),
+    };
+    return context;
+  }
+
+  Widget _buildChipGroup({
+    required String title,
+    required List<String> options,
+    required Set<String> selected,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: AppTokens.s8),
+        Wrap(
+          spacing: AppTokens.s8,
+          runSpacing: AppTokens.s8,
+          children: options
+              .map(
+                (label) => FilterChip(
+                  label: Text(label),
+                  selected: selected.contains(label),
+                  onSelected: (value) {
+                    setState(() {
+                      if (value) {
+                        selected.add(label);
+                      } else {
+                        selected.remove(label);
+                      }
+                    });
+                  },
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDropdownField({
+    required String title,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      decoration: InputDecoration(
+        labelText: title,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: const [
+        DropdownMenuItem(value: 'good', child: Text('良好')),
+        DropdownMenuItem(value: 'ok', child: Text('一般')),
+        DropdownMenuItem(value: 'poor', child: Text('较差')),
+      ],
+      onChanged: (next) => setState(() => onChanged(next)),
+    );
   }
 
   @override
@@ -370,6 +482,110 @@ class _PreviewPageState extends State<PreviewPage> {
               l10n.previewPass,
               style: Theme.of(context).textTheme.bodySmall,
             ),
+          const SizedBox(height: AppTokens.s12),
+          SoftCard(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s12,
+              vertical: AppTokens.s8,
+            ),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('补充信息（可选）'),
+              subtitle: const Text('填写越完整，分析越准确'),
+              childrenPadding: const EdgeInsets.only(bottom: AppTokens.s12),
+              children: [
+                _buildChipGroup(
+                  title: '最近吃的',
+                  options: const [
+                    '水果多',
+                    '香蕉',
+                    '酸奶',
+                    '牛奶',
+                    '蔬菜多',
+                    '肉多',
+                    '油腻',
+                    '辣',
+                    '甜食',
+                    '外食',
+                  ],
+                  selected: _selectedFoods,
+                ),
+                const SizedBox(height: AppTokens.s12),
+                _buildChipGroup(
+                  title: '最近喝的',
+                  options: const ['奶', '果汁', '电解质水', '冷饮'],
+                  selected: _selectedDrinks,
+                ),
+                const SizedBox(height: AppTokens.s12),
+                _buildChipGroup(
+                  title: '其他',
+                  options: const ['受凉', '作息变化', '刚打疫苗', '刚生病恢复'],
+                  selected: _selectedOther,
+                ),
+                const SizedBox(height: AppTokens.s16),
+                _buildDropdownField(
+                  title: '精神',
+                  value: _moodEnergy,
+                  onChanged: (v) => _moodEnergy = v,
+                ),
+                const SizedBox(height: AppTokens.s12),
+                _buildDropdownField(
+                  title: '食欲',
+                  value: _appetite,
+                  onChanged: (v) => _appetite = v,
+                ),
+                const SizedBox(height: AppTokens.s12),
+                _buildDropdownField(
+                  title: '睡眠',
+                  value: _sleep,
+                  onChanged: (v) => _sleep = v,
+                ),
+                const SizedBox(height: AppTokens.s12),
+                SwitchListTile(
+                  value: _fever,
+                  onChanged: (v) => setState(() => _fever = v),
+                  title: const Text('发热'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
+                  value: _vomit,
+                  onChanged: (v) => setState(() => _vomit = v),
+                  title: const Text('呕吐'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
+                  value: _bellyPain,
+                  onChanged: (v) => setState(() => _bellyPain = v),
+                  title: const Text('腹痛/哭闹'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                const SizedBox(height: AppTokens.s8),
+                TextField(
+                  controller: _stoolTimesController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: '24h 排便次数',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (value) {
+                    final parsed = int.tryParse(value);
+                    setState(() => _stoolTimes24h = parsed);
+                  },
+                ),
+                const SizedBox(height: AppTokens.s12),
+                TextField(
+                  controller: _otherNotesController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: '补充说明',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: AppTokens.s24),
           Row(
             children: [
