@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:app/l10n/app_localizations.dart';
@@ -302,7 +303,7 @@ class _PreviewPageState extends State<PreviewPage> {
           action: SnackBarAction(
             label: '复制错误',
             onPressed: () =>
-                Clipboard.setData(const ClipboardData(text: details)),
+                Clipboard.setData(ClipboardData(text: details)),
           ),
         ),
       );
