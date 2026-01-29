@@ -2,6 +2,7 @@
 import base64
 import json
 import os
+import subprocess
 import sys
 import urllib.request
 
@@ -50,7 +51,7 @@ def main():
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "User-Agent": "curl/8.6.0",
+        "User-Agent": "verify-script/1.0",
     }
     verify_token = os.environ.get("VERIFY_TOKEN", "").strip()
     if verify_token:
@@ -71,8 +72,30 @@ def main():
     except Exception as exc:
         fail(f"request failed: {exc}")
 
+    worker_version = headers.get("x-worker-version", "unknown")
+    proxy_version = headers.get("x-proxy-version", "unknown")
+    openai_model = headers.get("x-openai-model", "unknown")
+    print(f"x-worker-version: {worker_version}")
+    print(f"x-proxy-version: {proxy_version}")
+    print(f"x-openai-model: {openai_model}")
+
+    expected_worker = os.environ.get("WORKER_VERSION_SHORT", "").strip()
+    if not expected_worker:
+        try:
+            expected_worker = subprocess.check_output(
+                ["git", "-C", os.path.expanduser("~/stool-ai-worker"), "rev-parse", "--short", "HEAD"],
+                text=True,
+            ).strip()
+        except Exception:
+            expected_worker = ""
+
     if status != 200:
         fail(f"HTTP {status}")
+
+    if worker_version == "4127f7b":
+        fail("x-worker-version is still old (4127f7b)")
+    if expected_worker and worker_version != expected_worker:
+        fail(f"x-worker-version mismatch (expected {expected_worker})")
 
     try:
         data = json.loads(body)
@@ -88,7 +111,7 @@ def main():
     ):
         fail(f"error_code {data.get('error_code')}")
 
-    if headers.get("x-openai-model", "unknown") == "unknown":
+    if openai_model == "unknown":
         fail("x-openai-model is unknown")
     if data.get("model_used", "unknown") == "unknown":
         fail("model_used is unknown")
