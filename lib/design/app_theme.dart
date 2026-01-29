@@ -40,12 +40,13 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(50),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpace.s16,
             vertical: AppSpace.s12,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.r16),
+            borderRadius: BorderRadius.circular(AppRadius.r12),
           ),
           textStyle: AppText.section,
         ),
@@ -54,12 +55,13 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.primaryDeep,
           side: const BorderSide(color: AppColors.primary),
+          minimumSize: const Size.fromHeight(50),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpace.s16,
             vertical: AppSpace.s12,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.r16),
+            borderRadius: BorderRadius.circular(AppRadius.r12),
           ),
           textStyle: AppText.section,
         ),
@@ -71,6 +73,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(AppRadius.r12),
           side: const BorderSide(color: AppColors.divider),
         ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

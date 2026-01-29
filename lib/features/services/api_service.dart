@@ -26,6 +26,7 @@ class ApiService {
     String dietKeywords = '',
     AnalyzeContext? context,
   }) async {
+    final requestId = DateTime.now().microsecondsSinceEpoch.toString();
     debugPrint('ApiService analyze sending request');
     final url = Uri.parse('$_baseUrl/analyze');
     final base64Len = ((imageBytes.length + 2) ~/ 3) * 4;
@@ -37,27 +38,25 @@ class ApiService {
         'pain_or_strain': painOrStrain,
         'diet_keywords': dietKeywords,
         'context': context?.toJson() ?? {},
+        'mode': 'classify_then_analyze',
       };
-      debugPrint('[Analyze] context=${jsonEncode(bodyMap['context'])}');
+      debugPrint('[Analyze][$requestId] context=${jsonEncode(bodyMap['context'])}');
       final jsonBody = jsonEncode(bodyMap);
       const headers = {
         'Content-Type': 'application/json; charset=utf-8',
         'Accept': 'application/json',
       };
       debugPrint(
-        'ApiService request: $url bytes=${imageBytes.length} base64Len=$base64Len',
+        '[ApiService][$requestId] POST $url bytes=${imageBytes.length} base64Len=$base64Len',
       );
-      debugPrint('ApiService json length: ${jsonBody.length}');
-      debugPrint('ApiService headers: $headers');
-      debugPrint(
-        'ApiService json preview: ${jsonBody.substring(0, jsonBody.length > 200 ? 200 : jsonBody.length)}',
-      );
+      debugPrint('[ApiService][$requestId] json length: ${jsonBody.length}');
+      debugPrint('[ApiService][$requestId] headers: $headers');
       final response = await _postJsonWithRetry(url, jsonBody, headers);
       debugPrint(
-        'ApiService response: ${response.statusCode} ${_snippet(response.body, 300)}',
+        '[ApiService][$requestId] response: ${response.statusCode} ${_snippet(response.body, 300)}',
       );
       debugPrint(
-        'ApiService headers: x-worker-version=${response.headers['x-worker-version']} '
+        '[ApiService][$requestId] headers: x-worker-version=${response.headers['x-worker-version']} '
         'x-proxy-version=${response.headers['x-proxy-version']} '
         'schema_version=${response.headers['schema_version']} '
         'x-openai-model=${response.headers['x-openai-model']}',
@@ -66,12 +65,9 @@ class ApiService {
       final body = jsonDecode(response.body);
       if (body is Map<String, dynamic>) {
         debugPrint(
-          'ApiService body schema_version: ${body['schema_version']} '
-          'model_used: ${body['model_used']}',
-        );
-        debugPrint(
-          '[ApiService] response schema_version=${body['schema_version']} '
-          'model_used=${body['model_used']}',
+          '[ApiService][$requestId] response schema_version=${body['schema_version']} '
+          'model_used=${body['model_used']} is_stool=${body['is_stool_image']} '
+          'confidence=${body['confidence']}',
         );
       }
       if (response.statusCode >= 400) {
@@ -139,10 +135,21 @@ class ApiService {
             : [result.uncertaintyNote],
       };
 
+      final debugInfo = <String, String?>{
+        'schema_version': body['schema_version']?.toString(),
+        'model_used': body['model_used']?.toString(),
+        'x-openai-model': response.headers['x-openai-model'],
+        'x-worker-version': response.headers['x-worker-version'],
+        'x-proxy-version': response.headers['x-proxy-version'],
+        'request_id': body['openai_request_id']?.toString() ??
+            response.headers['x-request-id'],
+      };
+
       return ResultPayload(
         analysis: AnalyzeResponse.fromJson(analysisJson),
         advice: AdviceResponse.fromJson(adviceJson),
         structured: parsed,
+        debugInfo: debugInfo,
       );
     } catch (error, stack) {
       if (error is TimeoutException || error is HandshakeException) {

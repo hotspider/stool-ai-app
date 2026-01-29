@@ -136,12 +136,15 @@ class PdfExportService {
 
   static pw.Widget _title(String text) => pw.Text(
         text,
-        style: const pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
       );
 
   static pw.Widget _sectionTitle(String text) => pw.Padding(
         padding: const pw.EdgeInsets.only(bottom: 6),
-        child: pw.Text(text, style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+        ),
       );
 
   static pw.Widget _metaRow(String k, String v) => pw.Row(

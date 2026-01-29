@@ -9,15 +9,16 @@ import 'package:app/l10n/app_localizations.dart';
 import '../../core/image/image_source_service.dart';
 import '../../core/validation/basic_image_validator.dart';
 import '../../core/validation/image_validator.dart';
-import '../../design/tokens.dart';
 import '../../design/widgets/app_scaffold.dart';
-import '../../design/widgets/press_scale.dart';
-import '../../design/widgets/soft_card.dart';
+import '../../ui/components/app_card.dart';
+import '../../ui/components/notice_banner.dart';
+import '../../ui/components/primary_button.dart';
+import '../../ui/components/section_header.dart';
+import '../../ui/design_tokens.dart';
 import '../models/analyze_context.dart';
 import '../models/result_payload.dart';
 import '../services/api_service.dart';
 import '../widgets/error_state_card.dart';
-import '../widgets/optional_context_panel.dart';
 
 class PreviewPage extends StatefulWidget {
   final ImageSelection? selection;
@@ -35,11 +36,24 @@ class _PreviewPageState extends State<PreviewPage> {
   bool _isValidating = false;
   bool _isAnalyzing = false;
   ImageValidationResult? _validation;
+  late final TextEditingController _foodsController;
+  late final TextEditingController _drinksController;
+  late final TextEditingController _moodController;
+  late final TextEditingController _notesController;
 
   @override
   void initState() {
     super.initState();
     _bytes = widget.selection?.bytes;
+    _foodsController = TextEditingController(text: _ctx.foodsEaten ?? '');
+    _drinksController = TextEditingController(text: _ctx.drinksTaken ?? '');
+    _moodController = TextEditingController(text: _ctx.moodState ?? '');
+    _notesController = TextEditingController(text: _ctx.otherNotes ?? '');
+    _foodsController.addListener(_syncContext);
+    _drinksController.addListener(_syncContext);
+    _moodController.addListener(_syncContext);
+    _notesController.addListener(_syncContext);
+    _syncContext();
     if (_bytes != null) {
       _validate();
     }
@@ -47,7 +61,28 @@ class _PreviewPageState extends State<PreviewPage> {
 
   @override
   void dispose() {
+    _foodsController.dispose();
+    _drinksController.dispose();
+    _moodController.dispose();
+    _notesController.dispose();
     super.dispose();
+  }
+
+  void _syncContext() {
+    _ctx = AnalyzeContext(
+      foodsEaten: _foodsController.text.trim().isEmpty
+          ? null
+          : _foodsController.text.trim(),
+      drinksTaken: _drinksController.text.trim().isEmpty
+          ? null
+          : _drinksController.text.trim(),
+      moodState: _moodController.text.trim().isEmpty
+          ? null
+          : _moodController.text.trim(),
+      otherNotes: _notesController.text.trim().isEmpty
+          ? null
+          : _notesController.text.trim(),
+    );
   }
 
   Future<void> _validate() async {
@@ -87,8 +122,8 @@ class _PreviewPageState extends State<PreviewPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Icon(Icons.error_outline,
-                size: 36, color: AppTokens.riskMedium),
-            const SizedBox(height: AppTokens.s12),
+                size: 36, color: UiColors.riskMedium),
+            const SizedBox(height: UiSpacing.md),
             Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(description, style: Theme.of(context).textTheme.bodySmall),
@@ -270,8 +305,16 @@ class _PreviewPageState extends State<PreviewPage> {
         contextSummary: _buildContextSummary(_ctx.toJson()),
         validationWarning:
             _validation?.weakPass == true ? l10n.previewWeakPass : null,
+        debugInfo: result.debugInfo,
       );
-      context.push('/result', extra: payload);
+      final structured = result.structured?.result;
+      if (structured != null &&
+          (structured.errorCode == 'NOT_STOOL_IMAGE' ||
+              structured.isStoolImage == false)) {
+        context.push('/non-stool', extra: structured.explanation);
+      } else {
+        context.push('/result', extra: payload);
+      }
     } on ApiServiceException catch (e) {
       if (!mounted) {
         return;
@@ -364,16 +407,11 @@ class _PreviewPageState extends State<PreviewPage> {
       resizeToAvoidBottomInset: true,
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(AppSpace.s16),
-          child: ElevatedButton(
+          padding: const EdgeInsets.all(UiSpacing.md),
+          child: PrimaryButton(
+            label: '提交并分析',
+            isLoading: _isAnalyzing,
             onPressed: canAnalyze ? _startAnalyze : null,
-            child: _isAnalyzing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('提交并分析'),
           ),
         ),
       ),
@@ -381,13 +419,13 @@ class _PreviewPageState extends State<PreviewPage> {
         child: Column(
           children: [
             _buildImagePreview(),
-            const Divider(),
+            const Divider(height: 1),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
-                child: _buildExtraInputsForm(canAnalyze),
+                child: _buildExtraInputsForm(),
               ),
             ),
           ],
@@ -399,12 +437,12 @@ class _PreviewPageState extends State<PreviewPage> {
   Widget _buildImagePreview() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: SoftCard(
+      child: AppCard(
         padding: EdgeInsets.zero,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppTokens.r16),
-          child: SizedBox(
-            height: 220,
+        child: SizedBox(
+          height: 300,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(UiRadius.card),
             child: Image.memory(
               _bytes!,
               fit: BoxFit.cover,
@@ -415,7 +453,7 @@ class _PreviewPageState extends State<PreviewPage> {
     );
   }
 
-  Widget _buildExtraInputsForm(bool canAnalyze) {
+  Widget _buildExtraInputsForm() {
     final l10n = AppLocalizations.of(context)!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -433,52 +471,82 @@ class _PreviewPageState extends State<PreviewPage> {
             ],
           )
         else if (_validation?.ok == true && _validation?.weakPass == true)
-          Text(
-            l10n.previewWeakPass,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: AppTokens.riskMedium),
+          NoticeBanner(
+            title: '拍摄质量提示',
+            items: [l10n.previewWeakPass],
+            color: UiColors.riskMedium,
           )
         else if (_validation != null && _validation!.ok == false)
-          Text(
-            _errorDescription(_validation!.reason, _validation!.message),
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: AppTokens.riskMedium),
+          NoticeBanner(
+            title: '拍摄质量提示',
+            items: [_errorDescription(_validation!.reason, _validation!.message)],
+            color: UiColors.riskMedium,
           )
         else if (_validation?.ok == true)
-          Text(
-            l10n.previewPass,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        const SizedBox(height: AppSpace.s12),
-        OptionalContextPanel(
-          initial: _ctx,
-          onChanged: (next) => _ctx = next,
+          Text(l10n.previewPass, style: UiText.hint),
+        const SizedBox(height: UiSpacing.lg),
+        const SectionHeader(
+          icon: Icons.edit_note,
+          title: '补充信息（可选）',
+          tag: '提升准确度',
         ),
-        const SizedBox(height: AppSpace.s24),
-        PressScale(
-          child: OutlinedButton(
-            onPressed: () => _repick(ImageSourceType.gallery),
-            child: Text(l10n.previewRechoose),
-          ),
+        const SizedBox(height: UiSpacing.sm),
+        Text('填写后可提升判断准确度', style: UiText.hint),
+        const SizedBox(height: UiSpacing.md),
+        _buildTextFieldCard(
+          label: '吃了什么',
+          hint: '例如：香蕉+米饭',
+          controller: _foodsController,
         ),
-        if (_isAnalyzing) ...[
-          const SizedBox(height: AppSpace.s8),
-          Text(
-            '预计 10~30 秒',
-            style: Theme.of(context).textTheme.bodySmall,
+        const SizedBox(height: UiSpacing.md),
+        _buildTextFieldCard(
+          label: '喝了什么',
+          hint: '例如：牛奶+温水',
+          controller: _drinksController,
+        ),
+        const SizedBox(height: UiSpacing.md),
+        _buildTextFieldCard(
+          label: '精神状态',
+          hint: '例如：精神好/一般/嗜睡/烦躁',
+          controller: _moodController,
+        ),
+        const SizedBox(height: UiSpacing.md),
+        _buildTextFieldCard(
+          label: '其他',
+          hint: '例如：无发热，无呕吐，次数不多',
+          controller: _notesController,
+          maxLines: 4,
+        ),
+        const SizedBox(height: UiSpacing.lg),
+        OutlinedButton(
+          onPressed: () => _repick(ImageSourceType.gallery),
+          child: Text(l10n.previewRechoose),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextFieldCard({
+    required String label,
+    required String hint,
+    required TextEditingController controller,
+    int maxLines = 1,
+  }) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: UiText.section),
+          const SizedBox(height: UiSpacing.sm),
+          TextField(
+            controller: controller,
+            maxLines: maxLines,
+            decoration: InputDecoration(
+              hintText: hint,
+            ),
           ),
         ],
-        const SizedBox(height: AppSpace.s12),
-        Text(
-          l10n.previewHint,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        if (!canAnalyze) const SizedBox(height: AppSpace.s6),
-      ],
+      ),
     );
   }
 }

@@ -10,13 +10,12 @@ import 'package:app/l10n/app_localizations.dart';
 import '../../core/di/engine_provider.dart';
 import '../services/analyzer/analyzer.dart';
 import '../services/analyzer/analyzer_factory.dart';
-import '../../design/tokens.dart';
 import '../../design/widgets/app_scaffold.dart';
 import '../../design/components/info_banner.dart';
-import '../../design/components/section_header.dart';
 import '../../design/components/soft_card.dart';
 import '../../design/components/primary_button.dart';
 import '../../design/components/secondary_button.dart';
+import '../../design/components/section_header.dart';
 import '../models/advice_response.dart';
 import '../models/analyze_response.dart';
 import '../models/record.dart';
@@ -27,6 +26,14 @@ import '../services/storage_service.dart';
 import '../widgets/error_state_card.dart';
 import '../widgets/loading_steps.dart';
 import '../widgets/risk_badge.dart';
+import '../../ui/components/app_card.dart';
+import '../../ui/components/bullet_list.dart';
+import '../../ui/components/key_value_chips.dart';
+import '../../ui/components/notice_banner.dart';
+import '../../ui/components/primary_button.dart' as ui;
+import '../../ui/components/section_header.dart' as ui;
+import '../../ui/design_tokens.dart';
+import '../../design/tokens.dart';
 
 class ResultPage extends StatefulWidget {
   final AnalyzeResponse? initialAnalysis;
@@ -35,6 +42,7 @@ class ResultPage extends StatefulWidget {
   final StoolAnalysisParseResult? initialStructured;
   final Map<String, dynamic>? initialContext;
   final String? contextSummary;
+  final Map<String, String?>? debugInfo;
 
   const ResultPage({
     super.key,
@@ -44,6 +52,7 @@ class ResultPage extends StatefulWidget {
     this.initialStructured,
     this.initialContext,
     this.contextSummary,
+    this.debugInfo,
   });
 
   @override
@@ -388,12 +397,15 @@ class _ResultPageState extends State<ResultPage> {
             structured.actionsToday.observe.isNotEmpty);
     final useLegacyActions =
         structured != null && !hasStructuredActions && legacyActions.isNotEmpty;
+    final showNonStool = structured != null &&
+        (structured.errorCode == 'NOT_STOOL_IMAGE' ||
+            structured.isStoolImage == false);
 
     return AppScaffold(
       title: l10n.resultTitle,
       padding: EdgeInsets.zero,
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpace.s20),
+        padding: const EdgeInsets.all(UiSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -409,156 +421,68 @@ class _ResultPageState extends State<ResultPage> {
             else if (_isAnalyzing || analysis == null || advice == null)
               LoadingSteps(steps: _steps)
             else if (structured == null) ...[
-              SoftCard(
+              AppCard(
                 child: Text(
                   l10n.resultInsufficientMessage,
-                  style: AppText.body,
+                  style: UiText.body,
                 ),
               ),
-            ] else if (structured.errorCode == 'NOT_STOOL_IMAGE' ||
-                structured.isStoolImage == false) ...[
-              SoftCard(
+            ] else if (showNonStool) ...[
+              AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('这张图片未识别到大便，暂时无法分析', style: AppText.section),
-                    const SizedBox(height: AppSpace.s8),
+                    Text('未检测到大便', style: UiText.title),
+                    const SizedBox(height: UiSpacing.sm),
                     Text(
-                      '为了避免误判，我们只在确认是“大便图片”后才会进入健康分析。',
-                      style: AppText.body,
+                      '这张图片看起来不像大便，无法进行分析。',
+                      style: UiText.body,
                     ),
-                    const SizedBox(height: AppSpace.s12),
+                    const SizedBox(height: UiSpacing.sm),
                     Text(
                       structured.explanation.isNotEmpty
                           ? structured.explanation
-                          : '可能拍到了：纸巾/地面/尿布内其他区域/食物/玩具/皮肤等。',
-                      style: AppText.body,
+                          : '建议重新拍摄更清晰、目标更居中的照片。',
+                      style: UiText.hint,
                     ),
-                    const SizedBox(height: AppSpace.s12),
-                    _ActionSection(
-                      title: '重拍要点（3 条）',
-                      iconKey: 'camera',
-                      items: const [
-                        '光线充足，避免背光/强反光',
-                        '对焦清晰，大便占画面 50% 以上',
-                        '只拍大便本身，尽量不要包含过多背景',
-                      ],
-                    ),
-                    const SizedBox(height: AppSpace.s12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: PrimaryButton(
-                            label: '重新拍摄',
-                            onPressed: () {
-                              if (context.canPop()) {
-                                context.pop();
-                              } else {
-                                context.go('/home');
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: AppSpace.s12),
-                        Expanded(
-                          child: SecondaryButton(
-                            label: '从相册选择',
-                            onPressed: () => context.go('/home'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpace.s8),
-                    TextButton(
-                      onPressed: () {
-                        showDialog<void>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('如何拍才准确？'),
-                            content: const Text(
-                              '请确保光线充足、对焦清晰，大便占画面 50% 以上，尽量减少背景干扰。',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('知道了'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      child: const Text('如何拍才准确？'),
-                    ),
-                    const SizedBox(height: AppSpace.s8),
-                    Text(
-                      '本工具用于健康记录与辅助观察，不替代医生诊断。',
-                      style: AppText.caption,
+                    const SizedBox(height: UiSpacing.md),
+                    ui.PrimaryButton(
+                      label: '查看重拍建议',
+                      onPressed: () => context.push('/non-stool',
+                          extra: structured.explanation),
                     ),
                   ],
                 ),
               ),
             ] else if (!structured.ok) ...[
-              SoftCard(
+              AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('信息不足，建议补充后再判断', style: AppText.section),
-                    const SizedBox(height: AppSpace.s8),
+                    Text('信息不足，建议补充后再判断', style: UiText.section),
+                    const SizedBox(height: UiSpacing.sm),
                     Text(
                       structured.uncertaintyNote.isNotEmpty
                           ? structured.uncertaintyNote
                           : '图片角度或光线可能影响判断，请补充信息或重新拍摄。',
-                      style: AppText.body,
+                      style: UiText.body,
                     ),
-                    const SizedBox(height: AppSpace.s12),
-                    _ActionSection(
-                      title: '为什么不足',
-                      iconKey: 'info',
-                      items: structured.uiStrings.sections
-                          .expand((section) => section.items)
-                          .toList(),
-                    ),
-                    const SizedBox(height: AppSpace.s12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: PrimaryButton(
-                            label: '返回补充信息',
-                            onPressed: () {
-                              if (context.canPop()) {
-                                context.pop();
-                              } else {
-                                context.go('/home');
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: AppSpace.s12),
-                        Expanded(
-                          child: SecondaryButton(
-                            label: '重新选择图片',
-                            onPressed: () => context.go('/home'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpace.s12),
-                    ExpansionTile(
-                      title: const Text('红旗预警（可展开）'),
-                      childrenPadding: const EdgeInsets.only(bottom: AppSpace.s8),
-                      children: [
-                        _BulletList(
-                          items: structured.redFlags
-                              .map((item) => '${item.title} ${item.detail}'.trim())
-                              .toList(),
-                        ),
-                      ],
+                    const SizedBox(height: UiSpacing.md),
+                    ui.PrimaryButton(
+                      label: '返回补充信息',
+                      onPressed: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/home');
+                        }
+                      },
                     ),
                   ],
                 ),
               ),
             ] else ...[
-              ..._buildNarrativeBlocks(
+              ..._buildDoctorReport(
                 context,
                 structured,
                 l10n,
@@ -566,37 +490,43 @@ class _ResultPageState extends State<ResultPage> {
                 legacyActions,
               ),
             ],
+            if (kDebugMode) ...[
+              const SizedBox(height: UiSpacing.lg),
+              _buildDebugPanel(),
+            ],
           ],
         ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
-            AppSpace.s20,
-            AppSpace.s8,
-            AppSpace.s20,
-            AppSpace.s16,
+            UiSpacing.md,
+            UiSpacing.sm,
+            UiSpacing.md,
+            UiSpacing.md,
           ),
           child: Row(
             children: [
               Expanded(
-                child: SecondaryButton(
-                  label: l10n.exportPdfTooltip,
+                child: OutlinedButton(
                   onPressed:
                       _isAnalyzing || _isSaving || _isExporting || !canUseResult
                           ? null
                           : _exportPdfFromResult,
-                  loading: _isExporting,
+                  child: Text(
+                    l10n.exportPdfTooltip,
+                    style: UiText.section,
+                  ),
                 ),
               ),
-              const SizedBox(width: AppSpace.s12),
+              const SizedBox(width: UiSpacing.sm),
               Expanded(
-                child: PrimaryButton(
+                child: ui.PrimaryButton(
                   label: l10n.resultSave,
+                  isLoading: _isSaving,
                   onPressed: _isAnalyzing || _isSaving || !canUseResult
                       ? null
                       : _saveRecord,
-                  loading: _isSaving,
                 ),
               ),
             ],
@@ -624,6 +554,333 @@ class _ResultPageState extends State<ResultPage> {
       default:
         return l10n.odorNone;
     }
+  }
+
+  List<Widget> _buildDoctorReport(
+    BuildContext context,
+    StoolAnalysisResult structured,
+    AppLocalizations l10n,
+    bool useLegacyActions,
+    List<String> legacyActions,
+  ) {
+    const fallback = '未能识别，建议补拍清晰图片';
+    final headline = _safeText(
+      structured.doctorExplanation.oneSentenceConclusion,
+      fallback: _safeText(structured.headline, fallback: '整体情况偏可观察。'),
+    );
+    final confidencePercent = (structured.confidence * 100).round();
+    final model = widget.debugInfo?['model_used'] ??
+        (structured.modelUsed.trim().isNotEmpty
+            ? structured.modelUsed
+            : 'unknown');
+    final riskLabel = switch (structured.riskLevel) {
+      'high' => '高风险',
+      'medium' => '中等风险',
+      'low' => '低风险',
+      _ => '待评估',
+    };
+    final overviewLine = [
+      '风险：$riskLabel',
+      '置信度：$confidencePercent%',
+      if (model.trim().isNotEmpty && model != 'unknown') '模型：$model',
+    ].join(' · ');
+
+    final chipLabels = <String>[
+      if (structured.stoolFeatures.bristolRange.isNotEmpty)
+        'Bristol ${structured.stoolFeatures.bristolRange}',
+      if (structured.stoolFeatures.colorDesc.isNotEmpty)
+        '颜色 ${structured.stoolFeatures.colorDesc}',
+      if (structured.stoolFeatures.textureDesc.isNotEmpty)
+        '质地 ${structured.stoolFeatures.textureDesc}',
+      if (structured.score > 0) '评分 ${structured.score}',
+    ];
+
+    final contextText = structured.inputContext != null
+        ? _buildContextSummaryFromInput(structured.inputContext!)
+        : (structured.interpretation.howContextAffects.isNotEmpty
+            ? structured.interpretation.howContextAffects.join('；')
+            : '你未填写补充信息，本次仅基于图片进行判断。');
+
+    final reasons = structured.reasoningBullets.isNotEmpty
+        ? structured.reasoningBullets.take(5).toList()
+        : structured.possibleCauses
+            .map((e) =>
+                '${_safeText(e.title, fallback: '常见原因')}：${_safeText(e.explanation, fallback: '与饮食或肠道通过速度相关')}'
+                    .trim())
+            .toList();
+
+    final canDo = useLegacyActions
+        ? legacyActions
+        : [
+            ...structured.actionsToday.diet,
+            ...structured.actionsToday.hydration,
+            ...structured.actionsToday.care,
+          ];
+    final avoid = structured.actionsToday.avoid;
+    final observe = structured.actionsToday.observe;
+
+    final extraFindings = <String>[];
+    if (structured.stoolFeatures.wateriness != 'none') {
+      extraFindings.add('水样程度：${structured.stoolFeatures.wateriness}');
+    }
+    if (structured.stoolFeatures.mucus != 'none') {
+      extraFindings.add('黏液：${structured.stoolFeatures.mucus}');
+    }
+    if (structured.stoolFeatures.foam != 'none') {
+      extraFindings.add('泡沫：${structured.stoolFeatures.foam}');
+    }
+    if (structured.stoolFeatures.blood != 'none') {
+      extraFindings.add('血丝：${structured.stoolFeatures.blood}');
+    }
+    if (structured.stoolFeatures.undigestedFood != 'none') {
+      extraFindings.add('未消化食物：${structured.stoolFeatures.undigestedFood}');
+    }
+    if (structured.stoolFeatures.separationLayers != 'none') {
+      extraFindings.add('水样分层：${structured.stoolFeatures.separationLayers}');
+    }
+    if (structured.stoolFeatures.odorLevel != 'unknown') {
+      extraFindings.add('气味：${structured.stoolFeatures.odorLevel}');
+    }
+    if (structured.stoolFeatures.visibleFindings.isNotEmpty) {
+      extraFindings.add('可见物：${structured.stoolFeatures.visibleFindings.join('、')}');
+    }
+
+    final redFlags = structured.redFlags
+        .map((item) => '${item.title} ${item.detail}'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+
+    final reassure = _safeText(
+      structured.uiStrings.longform.reassure,
+      fallback: '如果精神好、能吃能睡、次数不多，多数可观察 24-48 小时。',
+    );
+
+    return [
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: UiSpacing.sm, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _riskColor(structured.riskLevel).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                        color: _riskColor(structured.riskLevel)
+                            .withOpacity(0.4)),
+                  ),
+                  child: Text(
+                    _riskDescription(structured.riskLevel),
+                    style: UiText.hint.copyWith(
+                      color: _riskColor(structured.riskLevel),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text('置信度 $confidencePercent%', style: UiText.hint),
+              ],
+            ),
+            const SizedBox(height: UiSpacing.sm),
+            Text(headline, style: UiText.title),
+            const SizedBox(height: UiSpacing.sm),
+            Text(overviewLine, style: UiText.hint),
+            const SizedBox(height: UiSpacing.sm),
+            KeyValueChips(labels: chipLabels),
+          ],
+        ),
+      ),
+      const SizedBox(height: UiSpacing.lg),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(
+              icon: Icons.notes,
+              title: '一句话结论',
+            ),
+            const SizedBox(height: UiSpacing.sm),
+            Text(headline, style: UiText.body),
+          ],
+        ),
+      ),
+      const SizedBox(height: UiSpacing.lg),
+      const ui.SectionHeader(icon: Icons.search, title: '具体怎么看'),
+      const SizedBox(height: UiSpacing.sm),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(icon: Icons.bakery_dining, title: '形态'),
+            const SizedBox(height: UiSpacing.sm),
+            Text(
+              '形态：${_safeText(structured.stoolFeatures.shapeDesc, fallback: fallback)}',
+              style: UiText.body,
+            ),
+            const SizedBox(height: UiSpacing.xs),
+            Text(
+              'Bristol：${_safeText(structured.stoolFeatures.bristolRange, fallback: fallback)}',
+              style: UiText.hint,
+            ),
+            const SizedBox(height: UiSpacing.sm),
+            BulletList(items: structured.interpretation.whyShape),
+            const SizedBox(height: UiSpacing.sm),
+            Text(
+              _safeText(structured.doctorExplanation.shapeAnalysis,
+                  fallback: fallback),
+              style: UiText.hint,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: UiSpacing.md),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(icon: Icons.palette, title: '颜色'),
+            const SizedBox(height: UiSpacing.sm),
+            Text(
+              '颜色：${_safeText(structured.stoolFeatures.colorDesc, fallback: fallback)}',
+              style: UiText.body,
+            ),
+            const SizedBox(height: UiSpacing.sm),
+            BulletList(items: structured.interpretation.whyColor),
+            const SizedBox(height: UiSpacing.sm),
+            Text(
+              _safeText(structured.doctorExplanation.colorAnalysis,
+                  fallback: fallback),
+              style: UiText.hint,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: UiSpacing.md),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(icon: Icons.water_drop, title: '质地'),
+            const SizedBox(height: UiSpacing.sm),
+            Text(
+              '质地：${_safeText(structured.stoolFeatures.textureDesc, fallback: fallback)}',
+              style: UiText.body,
+            ),
+            const SizedBox(height: UiSpacing.sm),
+            BulletList(items: structured.interpretation.whyTexture),
+            const SizedBox(height: UiSpacing.sm),
+            Text(
+              _safeText(structured.doctorExplanation.textureAnalysis,
+                  fallback: fallback),
+              style: UiText.hint,
+            ),
+          ],
+        ),
+      ),
+      if (extraFindings.isNotEmpty) ...[
+        const SizedBox(height: UiSpacing.md),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const ui.SectionHeader(icon: Icons.visibility, title: '可见细节'),
+              const SizedBox(height: UiSpacing.sm),
+              BulletList(items: extraFindings),
+            ],
+          ),
+        ),
+      ],
+      const SizedBox(height: UiSpacing.lg),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(icon: Icons.person, title: '结合你填写的情况'),
+            const SizedBox(height: UiSpacing.sm),
+            Text(contextText, style: UiText.body),
+          ],
+        ),
+      ),
+      const SizedBox(height: UiSpacing.lg),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(icon: Icons.bubble_chart, title: '可能原因'),
+            const SizedBox(height: UiSpacing.sm),
+            BulletList(items: reasons),
+          ],
+        ),
+      ),
+      const SizedBox(height: UiSpacing.lg),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(icon: Icons.task_alt, title: '现在需要做什么'),
+            const SizedBox(height: UiSpacing.sm),
+            Text('✅ 可以做', style: UiText.section),
+            const SizedBox(height: UiSpacing.xs),
+            BulletList(items: canDo),
+            const SizedBox(height: UiSpacing.sm),
+            Text('❌ 少一点', style: UiText.section),
+            const SizedBox(height: UiSpacing.xs),
+            BulletList(items: avoid),
+            const SizedBox(height: UiSpacing.sm),
+            Text('👀 观察指标', style: UiText.section),
+            const SizedBox(height: UiSpacing.xs),
+            BulletList(items: observe),
+          ],
+        ),
+      ),
+      const SizedBox(height: UiSpacing.lg),
+      NoticeBanner(title: '何时就医', items: redFlags),
+      const SizedBox(height: UiSpacing.lg),
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ui.SectionHeader(icon: Icons.favorite, title: '家长安心指标'),
+            const SizedBox(height: UiSpacing.sm),
+            Text(reassure, style: UiText.body),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildDebugPanel() {
+    final info = widget.debugInfo ?? const <String, String?>{};
+    if (info.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return AppCard(
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        title: Text('调试信息', style: UiText.section),
+        children: info.entries
+            .map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: UiSpacing.sm),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 120,
+                      child: Text(entry.key, style: UiText.hint),
+                    ),
+                    Expanded(
+                      child: Text(entry.value ?? '-', style: UiText.body),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
   }
 
   String _colorLabel(StoolColor color) {
@@ -883,7 +1140,10 @@ class _ResultPageState extends State<ResultPage> {
           '像：${_safeText(structured.stoolFeatures.shapeDesc, fallback: "稠粥/土豆泥")}',
           '布里斯托：${_safeText(structured.stoolFeatures.bristolRange, fallback: "5-6")}',
         ],
-        footer: _safeText(structured.doctorExplanation.shapeAnalysis, fallback: "—"),
+        footer: _safeText(
+          structured.doctorExplanation.shapeAnalysis,
+          fallback: '未能识别，建议补拍清晰图片',
+        ),
       ),
       const SizedBox(height: AppSpace.s12),
       _FeatureCard(
@@ -893,7 +1153,10 @@ class _ResultPageState extends State<ResultPage> {
           '颜色：${_safeText(structured.stoolFeatures.colorLabel, fallback: "黄褐偏黄")}',
           _safeText(structured.stoolFeatures.colorReason, fallback: '多与饮食和肠道通过速度有关'),
         ],
-        footer: _safeText(structured.doctorExplanation.colorAnalysis, fallback: "—"),
+        footer: _safeText(
+          structured.doctorExplanation.colorAnalysis,
+          fallback: '未能识别，建议补拍清晰图片',
+        ),
       ),
       const SizedBox(height: AppSpace.s12),
       _FeatureCard(
@@ -903,7 +1166,10 @@ class _ResultPageState extends State<ResultPage> {
           '质地：${_safeText(structured.stoolFeatures.textureLabel, fallback: "细腻/糊状")}',
           abnormalLine,
         ],
-        footer: _safeText(structured.doctorExplanation.textureAnalysis, fallback: "—"),
+        footer: _safeText(
+          structured.doctorExplanation.textureAnalysis,
+          fallback: '未能识别，建议补拍清晰图片',
+        ),
       ),
       const SizedBox(height: AppSpace.s16),
       SectionHeader(title: '可能的原因（按概率）'),

@@ -8,6 +8,7 @@ import 'pages/app_shell.dart';
 import 'pages/history_detail_page.dart';
 import 'pages/history_page.dart';
 import 'pages/home_page.dart';
+import 'pages/non_stool_result_page.dart';
 import 'pages/preview_page.dart';
 import 'pages/privacy_page.dart';
 import 'pages/result_page.dart';
@@ -74,12 +75,21 @@ class AppRouter {
               validationWarning: payload.validationWarning,
               initialContext: payload.contextInput,
               contextSummary: payload.contextSummary,
+              debugInfo: payload.debugInfo,
             );
           }
           final analysis = state.extra is AnalyzeResponse
               ? state.extra as AnalyzeResponse
               : null;
           return ResultPage(initialAnalysis: analysis);
+        },
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/non-stool',
+        builder: (context, state) {
+          final explanation = state.extra is String ? state.extra as String : null;
+          return NonStoolResultPage(explanation: explanation);
         },
       ),
       GoRoute(

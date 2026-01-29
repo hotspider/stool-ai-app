@@ -24,6 +24,7 @@ class AppRadius {
 
 class AppSpace {
   static const double s6 = 6;
+  static const double s10 = 10;
   static const double s8 = 8;
   static const double s12 = 12;
   static const double s16 = 16;
@@ -45,20 +46,22 @@ class AppText {
   static const TextStyle title = TextStyle(
     fontSize: 20,
     fontWeight: FontWeight.w600,
+    height: 1.35,
     color: AppColors.textPrimary,
   );
   static const TextStyle section = TextStyle(
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: FontWeight.w600,
+    height: 1.4,
     color: AppColors.textPrimary,
   );
   static const TextStyle body = TextStyle(
-    fontSize: 14,
+    fontSize: 15,
     height: 1.4,
     color: AppColors.textPrimary,
   );
   static const TextStyle caption = TextStyle(
-    fontSize: 12,
+    fontSize: 13,
     height: 1.4,
     color: AppColors.textSecondary,
   );
@@ -84,6 +87,7 @@ class AppTokens {
   static const double r24 = AppRadius.r24;
 
   static const double s6 = AppSpace.s6;
+  static const double s10 = AppSpace.s10;
   static const double s8 = AppSpace.s8;
   static const double s12 = AppSpace.s12;
   static const double s16 = AppSpace.s16;

@@ -34,6 +34,12 @@ class ApiClient {
           body: jsonEncode(body),
         )
         .timeout(timeout);
+    if (kDebugMode) {
+      debugPrint('[ApiClient] status=${response.statusCode}');
+      debugPrint('[ApiClient] headers: x-openai-model=${response.headers['x-openai-model']} '
+          'x-worker-version=${response.headers['x-worker-version']} '
+          'x-proxy-version=${response.headers['x-proxy-version']}');
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(response.statusCode, response.body);
     }
