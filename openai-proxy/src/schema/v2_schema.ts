@@ -146,29 +146,37 @@ export const V2_SCHEMA_JSON = {
         "color",
         "texture",
         "combined_judgement",
-        "visual_analysis"
+        "visual_analysis",
+        "causes",
+        "todo",
+        "red_flags",
+        "reassure"
       ],
       "properties": {
         "one_sentence_conclusion": { "type": "string", "minLength": 1 },
-        "shape": { "type": "string", "minLength": 1 },
-        "color": { "type": "string", "minLength": 1 },
-        "texture": { "type": "string", "minLength": 1 },
+        "shape": { "type": "string", "minLength": 0 },
+        "color": { "type": "string", "minLength": 0 },
+        "texture": { "type": "string", "minLength": 0 },
         "visual_analysis": {
           "type": "object",
           "additionalProperties": false,
           "required": ["shape", "color", "texture"],
           "properties": {
-            "shape": { "type": "string", "minLength": 1 },
-            "color": { "type": "string", "minLength": 1 },
-            "texture": { "type": "string", "minLength": 1 }
+            "shape": { "type": "string", "minLength": 0 },
+            "color": { "type": "string", "minLength": 0 },
+            "texture": { "type": "string", "minLength": 0 }
           }
         },
-        "combined_judgement": { "type": "string", "minLength": 1 }
+        "combined_judgement": { "type": "string", "minLength": 0 },
+        "causes": { "type": "string", "minLength": 0 },
+        "todo": { "type": "string", "minLength": 0 },
+        "red_flags": { "type": "string", "minLength": 0 },
+        "reassure": { "type": "string", "minLength": 0 }
       }
     },
     "possible_causes": {
       "type": "array",
-      "minItems": 3,
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -182,23 +190,23 @@ export const V2_SCHEMA_JSON = {
     "reasoning_bullets": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
-      "minItems": 5
+      "minItems": 0
     },
     "actions_today": {
       "type": "object",
       "additionalProperties": false,
       "required": ["diet", "hydration", "care", "avoid", "observe"],
       "properties": {
-        "diet": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 3 },
-        "hydration": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 3 },
-        "care": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 3 },
-        "avoid": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 3 },
-        "observe": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 3 }
+        "diet": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 0 },
+        "hydration": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 0 },
+        "care": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 0 },
+        "avoid": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 0 },
+        "observe": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 0 }
       }
     },
     "red_flags": {
       "type": "array",
-      "minItems": 5,
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -212,7 +220,7 @@ export const V2_SCHEMA_JSON = {
     "follow_up_questions": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
-      "minItems": 6
+      "minItems": 0
     },
     "ui_strings": {
       "type": "object",
@@ -265,6 +273,10 @@ export const V2_SCHEMA_JSON = {
     "model_used": { "type": "string", "minLength": 1 },
     "proxy_version": { "type": "string", "minLength": 1 },
     "worker_version": { "type": "string" },
+    "model_primary": { "type": "string" },
+    "model_fallback": { "type": "string" },
+    "used_fallback": { "type": "boolean" },
+    "primary_error": { "type": "string" },
     "context_input": { "type": "object" },
     "input_context": { "type": "object" },
     "explanation": { "type": "string" },
@@ -272,6 +284,16 @@ export const V2_SCHEMA_JSON = {
     "error": { "type": "string" },
     "message": { "type": "string" },
     "raw_preview": { "type": "string" },
-    "openai_request_id": { "type": "string" }
+    "openai_request_id": { "type": "string" },
+    "image_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "tips"],
+      "properties": {
+        "status": { "type": "string" },
+        "reason": { "type": "string" },
+        "tips": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
   }
 };

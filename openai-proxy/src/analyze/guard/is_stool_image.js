@@ -5,9 +5,10 @@ Task:
 Determine whether the given image contains human stool (feces).
 
 Rules:
-- Answer strictly in JSON.
+- Answer strictly in JSON (no markdown / no extra text).
 - Do NOT analyze health, color, texture, or risks.
 - Only judge if this is stool or NOT.
+- Keep reason concise (max 3 short points).
 
 Output JSON schema:
 {

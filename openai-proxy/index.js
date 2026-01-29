@@ -57,8 +57,19 @@ function shouldFallbackModel(rawText) {
   );
 }
 
-async function callOpenAI(apiKey, payload, primaryModel) {
+function classifyPrimaryError(status, raw) {
+  if (status === 429) return "rate_limit";
+  if (status === 401 || status === 403) return "unauthorized";
+  if (status === 404) return "model_not_found";
+  if (status === 408 || status === 504) return "timeout";
+  if (status >= 500) return "openai_5xx";
+  if (raw && String(raw).toLowerCase().includes("invalid")) return "invalid_request";
+  return status ? `http_${status}` : "unknown";
+}
+
+async function callOpenAI(apiKey, payload, primaryModel, options = {}) {
   const fallbackModel = getFallbackModel();
+  const allowFallback = options.allowFallback !== false;
   const tryOnce = async (model) => {
     const body = JSON.stringify({ ...payload, model });
     const r = await fetch("https://api.openai.com/v1/responses", {
@@ -70,17 +81,25 @@ async function callOpenAI(apiKey, payload, primaryModel) {
       body,
     });
     const raw = await r.text().catch(() => "");
-    return { r, raw, model };
+    return { r, raw, model, used_fallback: false, primary_error: "" };
   };
 
   const first = await tryOnce(primaryModel);
   if (first.r.ok) {
     return first;
   }
-  if (primaryModel !== fallbackModel && shouldFallbackModel(first.raw)) {
-    return tryOnce(fallbackModel);
+  if (allowFallback && primaryModel !== fallbackModel && shouldFallbackModel(first.raw)) {
+    const fallback = await tryOnce(fallbackModel);
+    return {
+      ...fallback,
+      used_fallback: true,
+      primary_error: classifyPrimaryError(first.r.status, first.raw),
+    };
   }
-  return first;
+  return {
+    ...first,
+    primary_error: classifyPrimaryError(first.r.status, first.raw),
+  };
 }
 
 async function callOpenAIWithRetry(apiKey, basePayload, model) {
@@ -102,13 +121,15 @@ async function callOpenAIWithRetry(apiKey, basePayload, model) {
   ];
 
   let last = null;
+  let primaryError = "";
   for (let i = 0; i < attemptPayloads.length; i += 1) {
     const payload = attemptPayloads[i];
-    const result = await callOpenAI(apiKey, payload, primaryModel);
+    const result = await callOpenAI(apiKey, payload, primaryModel, { allowFallback: false });
     last = result;
     if (result.r.ok) {
       return result;
     }
+    primaryError = result.primary_error || primaryError;
   }
 
   if (fallbackModel !== primaryModel) {
@@ -123,7 +144,12 @@ async function callOpenAIWithRetry(apiKey, basePayload, model) {
         ...basePayload.input.filter((c) => c.role !== "system"),
       ],
     };
-    return callOpenAI(apiKey, fallbackPayload, fallbackModel);
+    const fallback = await callOpenAI(apiKey, fallbackPayload, fallbackModel, { allowFallback: false });
+    return {
+      ...fallback,
+      used_fallback: true,
+      primary_error: primaryError || fallback.primary_error,
+    };
   }
   return last;
 }
@@ -214,11 +240,12 @@ const SYSTEM_PROMPT = `
 4) 可能原因：写入 possible_causes（Top3）+ reasoning_bullets。
 5) 现在需要做什么：actions_today（✅/❌/👀）。
 6) 家长安心指标：写入 ui_strings.longform.reassure。
+7) 医生解释补充：写入 doctor_explanation.causes / todo / red_flags / reassure（完整、可读）。
 
 必须输出 JSON 并严格匹配 schema_version=2 的结构，字段如下（仅列要点）：
 - ok, schema_version=2, is_stool_image=true, headline, score, risk_level, confidence, uncertainty_note
 - stool_features: shape, shape_desc, color, color_desc, color_reason, texture, texture_desc, abnormal_signs, bristol_type, bristol_range, volume, wateriness, mucus, foam, blood, undigested_food, separation_layers, odor_level, visible_findings
-- doctor_explanation: one_sentence_conclusion, shape, color, texture, visual_analysis{shape,color,texture}, combined_judgement
+- doctor_explanation: one_sentence_conclusion, shape, color, texture, visual_analysis{shape,color,texture}, combined_judgement, causes, todo, red_flags, reassure
 - possible_causes: [{title, explanation}]
 - interpretation: overall_judgement, why_shape[], why_color[], why_texture[], how_context_affects[], confidence_explain
 - reasoning_bullets[], actions_today{diet,hydration,care,avoid,observe}, red_flags[{title,detail}], follow_up_questions[]
@@ -266,6 +293,35 @@ function sanitizeRawText(text) {
   let cleaned = text.trim();
   cleaned = cleaned.replace(/```(?:json)?/gi, "");
   return cleaned.trim();
+}
+
+function hasContextInput(ctx) {
+  if (!ctx || typeof ctx !== "object") return false;
+  const foods = String(ctx.foods_eaten || "").trim();
+  const drinks = String(ctx.drinks_taken || "").trim();
+  const mood = String(ctx.mood_state || "").trim();
+  const notes = String(ctx.other_notes || "").trim();
+  return Boolean(foods || drinks || mood || notes);
+}
+
+function contextSummaryFromInput(ctx) {
+  if (!ctx || typeof ctx !== "object") return "";
+  const parts = [];
+  if (ctx.foods_eaten) parts.push(`吃了：${String(ctx.foods_eaten)}`);
+  if (ctx.drinks_taken) parts.push(`喝了：${String(ctx.drinks_taken)}`);
+  if (ctx.mood_state) parts.push(`精神状态：${String(ctx.mood_state)}`);
+  if (ctx.other_notes) parts.push(`其他：${String(ctx.other_notes)}`);
+  return parts.length ? `你填写的情况显示：${parts.join("；")}` : "";
+}
+
+function contextAffectsFromInput(ctx) {
+  if (!ctx || typeof ctx !== "object") return [];
+  const items = [];
+  if (ctx.foods_eaten) items.push(`近期饮食（${String(ctx.foods_eaten)}）可能影响颜色与软硬度`);
+  if (ctx.drinks_taken) items.push(`饮水/饮品（${String(ctx.drinks_taken)}）可能影响水分含量`);
+  if (ctx.mood_state) items.push(`精神状态（${String(ctx.mood_state)}）有助判断是否存在不适`);
+  if (ctx.other_notes) items.push(`补充说明提示：${String(ctx.other_notes)}`);
+  return items;
 }
 
 function buildModelOutputInvalid(usedModel, requestId) {
@@ -387,6 +443,10 @@ function buildDefaultResult() {
       texture: "",
       visual_analysis: { shape: "", color: "", texture: "" },
       combined_judgement: "",
+      causes: "",
+      todo: "",
+      red_flags: "",
+      reassure: "",
     },
     possible_causes: [],
     interpretation: {
@@ -446,8 +506,13 @@ function buildDefaultResult() {
       },
     },
     model_used: "unknown",
+    model_primary: getPrimaryModel(),
+    model_fallback: getFallbackModel(),
+    used_fallback: false,
+    primary_error: "",
     proxy_version: PROXY_VERSION,
     explanation: "",
+    image_validation: null,
   };
 }
 
@@ -464,9 +529,26 @@ function buildNotStoolResult(guard) {
     confidence: Number.isFinite(Number(guard?.confidence)) ? Number(guard.confidence) : 0,
     explanation: guard?.reason || "未识别到大便图像。",
     stool_features: null,
-    doctor_explanation: null,
+    doctor_explanation: {
+      one_sentence_conclusion: "这张图片未识别到大便，暂时无法分析。",
+      shape: "",
+      color: "",
+      texture: "",
+      visual_analysis: { shape: "", color: "", texture: "" },
+      combined_judgement: "",
+      causes: "",
+      todo: "",
+      red_flags: "",
+      reassure: "",
+    },
+    possible_causes: [],
+    actions_today: { diet: [], hydration: [], care: [], avoid: [], observe: [] },
+    red_flags: [],
+    reasoning_bullets: [],
+    follow_up_questions: ["是否选错了图片？", "是否需要重新拍摄更清晰的照片？"],
     ui_strings: {
-      ...base.ui_strings,
+      summary: "未识别到大便图片，建议重新拍摄后再分析。",
+      tags: ["非大便图片"],
       sections: [
         {
           title: "无法分析的原因",
@@ -486,7 +568,31 @@ function buildNotStoolResult(guard) {
             "尽量减少背景干扰",
           ],
         },
+        {
+          title: "常见错误示例",
+          icon_key: "info",
+          items: [
+            "拍到纸巾/地面/玩具/衣物",
+            "画面过暗或强反光",
+            "大便占比过小或被遮挡",
+          ],
+        },
       ],
+      longform: {
+        conclusion: "这张图片未识别到大便，暂时无法分析。",
+        how_to_read: "当前图片无法用于判断大便性状，请更清晰地重新拍摄。",
+        context: "本次仅用于确认是否为大便图片，无需补充更多信息。",
+        causes: "可能选错图片或目标未清晰入镜。",
+        todo: "请重新拍摄：光线充足、对焦清晰、目标占画面 50% 以上。",
+        red_flags: "如宝宝出现持续发热、便血或精神明显差，请及时就医。",
+        reassure: "这是识别失败提示，并非健康结论。",
+      },
+    },
+    context_summary: "本次仅用于确认是否为大便图片。",
+    image_validation: {
+      status: "not_stool",
+      reason: guard?.reason || "未识别到大便图像。",
+      tips: ["对焦清晰", "光线充足", "目标占画面 50% 以上"],
     },
   };
 }
@@ -519,6 +625,20 @@ function normalizeResult(parsed) {
   out.model_used = typeof out.model_used === "string" && out.model_used.trim()
     ? out.model_used.trim()
     : base.model_used;
+  out.model_primary =
+    typeof out.model_primary === "string" && out.model_primary.trim()
+      ? out.model_primary.trim()
+      : base.model_primary;
+  out.model_fallback =
+    typeof out.model_fallback === "string" && out.model_fallback.trim()
+      ? out.model_fallback.trim()
+      : base.model_fallback;
+  out.used_fallback = typeof out.used_fallback === "boolean" ? out.used_fallback : base.used_fallback;
+  out.primary_error = typeof out.primary_error === "string" ? out.primary_error : base.primary_error;
+  out.image_validation =
+    out.image_validation && typeof out.image_validation === "object"
+      ? out.image_validation
+      : base.image_validation;
   out.proxy_version = typeof out.proxy_version === "string" && out.proxy_version.trim()
     ? out.proxy_version.trim()
     : PROXY_VERSION;
@@ -529,9 +649,14 @@ function normalizeResult(parsed) {
   out.input_context = typeof out.input_context === "object" && out.input_context
     ? out.input_context
     : undefined;
+  const contextInput = out.input_echo?.context || out.context_input || out.input_context || {};
+  const derivedSummary = contextSummaryFromInput(contextInput);
   out.context_summary = typeof out.context_summary === "string" && out.context_summary.trim()
     ? out.context_summary.trim()
-    : base.context_summary;
+    : derivedSummary || base.context_summary;
+  if (derivedSummary && out.context_summary.includes("未提供补充信息")) {
+    out.context_summary = derivedSummary;
+  }
   const basis = { ...base.analysis_basis, ...(out.analysis_basis || {}) };
   out.analysis_basis = {
     image_only: ensureMinItems(
@@ -549,6 +674,7 @@ function normalizeResult(parsed) {
   out.input_echo = {
     context: echo && typeof echo.context === "object" ? echo.context : {},
   };
+  const contextAffects = contextAffectsFromInput(out.input_echo.context);
   out.score = Number.isFinite(Number(out.score)) ? Number(out.score) : base.score;
   out.risk_level = ["low", "medium", "high"].includes(out.risk_level)
     ? out.risk_level
@@ -643,9 +769,7 @@ function normalizeResult(parsed) {
     );
   }
 
-  out.doctor_explanation = out.is_stool_image === false
-    ? null
-    : {
+  out.doctor_explanation = {
         one_sentence_conclusion:
           typeof doctor.one_sentence_conclusion === "string" && doctor.one_sentence_conclusion.trim()
             ? doctor.one_sentence_conclusion.trim()
@@ -680,6 +804,22 @@ function normalizeResult(parsed) {
           typeof doctor.combined_judgement === "string" && doctor.combined_judgement.trim()
             ? doctor.combined_judgement.trim()
             : interpretation.overall_judgement || base.interpretation.overall_judgement,
+    causes:
+      typeof doctor.causes === "string" && doctor.causes.trim()
+        ? doctor.causes.trim()
+        : base.doctor_explanation.causes,
+    todo:
+      typeof doctor.todo === "string" && doctor.todo.trim()
+        ? doctor.todo.trim()
+        : base.doctor_explanation.todo,
+    red_flags:
+      typeof doctor.red_flags === "string" && doctor.red_flags.trim()
+        ? doctor.red_flags.trim()
+        : base.doctor_explanation.red_flags,
+    reassure:
+      typeof doctor.reassure === "string" && doctor.reassure.trim()
+        ? doctor.reassure.trim()
+        : base.doctor_explanation.reassure,
       };
 
   if (out.doctor_explanation) {
@@ -801,6 +941,79 @@ function normalizeResult(parsed) {
     },
   };
 
+  if (out.is_stool_image === false) {
+    out.stool_features = null;
+    out.possible_causes = [];
+    out.reasoning_bullets = [];
+    out.actions_today = { diet: [], hydration: [], care: [], avoid: [], observe: [] };
+    out.red_flags = [];
+    out.follow_up_questions = ["是否选错了图片？", "是否需要重新拍摄更清晰的照片？"];
+    out.interpretation = {
+      ...out.interpretation,
+      overall_judgement: "无法判断是否为大便图片",
+      why_shape: [],
+      why_color: [],
+      why_texture: [],
+      how_context_affects: contextAffects.length
+        ? contextAffects
+        : ["本次仅用于确认是否为大便图片"],
+      confidence_explain: "当前图片未识别为大便，无法进入健康分析。",
+    };
+    out.context_summary = hasContextInput(out.input_echo.context)
+      ? contextSummaryFromInput(out.input_echo.context)
+      : "本次仅用于确认是否为大便图片。";
+    out.doctor_explanation = {
+      ...out.doctor_explanation,
+      shape: "",
+      color: "",
+      texture: "",
+      combined_judgement: "",
+      causes: "",
+      todo: "",
+      red_flags: "",
+      reassure: "",
+      visual_analysis: { shape: "", color: "", texture: "" },
+    };
+    out.ui_strings = {
+      summary: "未识别到大便图片，建议重新拍摄后再分析。",
+      tags: ["非大便图片"],
+      sections: [
+        {
+          title: "无法分析的原因",
+          icon_key: "camera",
+          items: ["图片中未识别到大便", "可能拍到其他物体或场景", "目标不清晰或被遮挡"],
+        },
+        {
+          title: "如何重拍",
+          icon_key: "retry",
+          items: ["光线充足，避免背光/反光", "对焦清晰，目标占画面 50% 以上", "尽量减少背景干扰"],
+        },
+        {
+          title: "常见错误示例",
+          icon_key: "info",
+          items: ["拍到纸巾/地面/玩具/衣物", "画面过暗或强反光", "目标过小或被遮挡"],
+        },
+      ],
+      longform: {
+        conclusion: "这张图片未识别到大便，暂时无法分析。",
+        how_to_read: "当前图片无法用于判断大便性状，请更清晰地重新拍摄。",
+        context: "本次仅用于确认是否为大便图片，无需补充更多信息。",
+        causes: "可能选错图片或目标未清晰入镜。",
+        todo: "请重新拍摄：光线充足、对焦清晰、目标占画面 50% 以上。",
+        red_flags: "如宝宝出现持续发热、便血或精神明显差，请及时就医。",
+        reassure: "这是识别失败提示，并非健康结论。",
+      },
+    };
+    if (!out.image_validation || typeof out.image_validation !== "object") {
+      out.image_validation = {
+        status: "not_stool",
+        reason: out.explanation || "未识别到大便图像。",
+        tips: ["对焦清晰", "光线充足", "目标占画面 50% 以上"],
+      };
+    }
+    return out;
+  }
+
   out.reasoning_bullets = ensureMinItems(out.reasoning_bullets, 5, [
     "根据颜色、质地与量的综合观察进行判断",
     "结合近期饮食与精神状态做辅助分析",
@@ -907,14 +1120,20 @@ function normalizeResult(parsed) {
     3,
     base.interpretation.how_context_affects
   );
+  if (contextAffects.length) {
+    out.interpretation.how_context_affects = ensureMinItems(
+      contextAffects,
+      3,
+      contextAffects
+    );
+  }
 
+  const howToReadFallback = out.stool_features
+    ? `形态：${out.stool_features.shape_desc}；颜色：${out.stool_features.color_desc}；质地：${out.stool_features.texture_desc}。`
+    : "图片无法识别为大便，建议重新拍摄。";
   out.ui_strings.longform = {
     conclusion: out.ui_strings.longform.conclusion || out.headline || "整体情况需要继续观察。",
-    how_to_read:
-      out.ui_strings.longform.how_to_read ||
-      out.stool_features
-        ? `形态：${out.stool_features.shape_desc}；颜色：${out.stool_features.color_desc}；质地：${out.stool_features.texture_desc}。`
-        : "图片无法识别为大便，建议重新拍摄。",
+    how_to_read: out.ui_strings.longform.how_to_read || howToReadFallback,
     context:
       out.ui_strings.longform.context ||
       out.interpretation.how_context_affects.join("；"),
@@ -936,6 +1155,9 @@ function normalizeResult(parsed) {
   out.texture = out.stool_features?.texture_desc ?? null;
   out.hydration_hint = out.actions_today.hydration[0] || "";
   out.diet_advice = out.actions_today.diet.slice(0, 5);
+  if (!out.ui_strings.summary) {
+    out.ui_strings.summary = out.headline || out.reasoning_bullets.slice(0, 2).join("；");
+  }
 
   return out;
 }
@@ -1022,6 +1244,10 @@ app.post("/analyze", async (req, res) => {
     if (!guardResult.is_stool) {
       const notStool = normalizeResult(buildNotStoolResult(guardResult));
       notStool.model_used = guardResult.model_used || model;
+      notStool.model_primary = getPrimaryModel();
+      notStool.model_fallback = getFallbackModel();
+      notStool.used_fallback = guardResult.model_used === getFallbackModel();
+      notStool.primary_error = "";
       res.setHeader("x-openai-model", notStool.model_used || "unknown");
       res.setHeader("schema_version", "2");
       return res.status(200).json(notStool);
@@ -1031,6 +1257,8 @@ app.post("/analyze", async (req, res) => {
     const initialResponse = await callOpenAIWithRetry(apiKey, payload, model);
     const { r, raw } = initialResponse;
     let usedModel = initialResponse.model;
+    const usedFallback = initialResponse.used_fallback === true;
+    const primaryError = initialResponse.primary_error || "";
     console.log(`[OPENAI] response status=${r.status}`);
     res.setHeader("x-openai-model", usedModel || model);
 
@@ -1039,6 +1267,10 @@ app.post("/analyze", async (req, res) => {
         buildErrorResult("OPENAI_ERROR", raw || `OpenAI failed (${r.status})`, usedModel)
       );
       errResult.model_used = usedModel;
+      errResult.model_primary = getPrimaryModel();
+      errResult.model_fallback = getFallbackModel();
+      errResult.used_fallback = usedFallback;
+      errResult.primary_error = primaryError;
       res.setHeader("x-openai-model", usedModel || model);
       return res.status(200).json(errResult);
     }
@@ -1050,6 +1282,10 @@ app.post("/analyze", async (req, res) => {
         buildErrorResult("EMPTY_OUTPUT", "OpenAI response missing output text", usedModel)
       );
       errResult.model_used = usedModel;
+      errResult.model_primary = getPrimaryModel();
+      errResult.model_fallback = getFallbackModel();
+      errResult.used_fallback = usedFallback;
+      errResult.primary_error = primaryError;
       res.setHeader("x-openai-model", usedModel || model);
       return res.status(200).json(errResult);
     }
@@ -1072,7 +1308,7 @@ app.post("/analyze", async (req, res) => {
       }
       if (!parsed) {
         const strictPayload = buildStrictPayload(payload);
-        const retry = await callOpenAI(apiKey, strictPayload, model);
+        const retry = await callOpenAI(apiKey, strictPayload, model, { allowFallback: false });
         if (retry.r.ok) {
           const retryData = JSON.parse(retry.raw);
           const retryText = extractOutputText(retryData);
@@ -1100,6 +1336,54 @@ app.post("/analyze", async (req, res) => {
         const fallback = normalizeResult(buildModelOutputInvalid(usedModel, requestId));
         fallback.raw_preview = String(cleanedText).slice(0, 500);
         fallback.model_used = usedModel;
+        fallback.model_primary = getPrimaryModel();
+        fallback.model_fallback = getFallbackModel();
+        fallback.used_fallback = usedFallback;
+        fallback.primary_error = primaryError;
+        res.setHeader("x-openai-model", usedModel || model);
+        return res.status(200).json(fallback);
+      }
+    }
+
+    const needsCriticalRetry =
+      parsed &&
+      parsed.is_stool_image !== false &&
+      (!parsed.headline ||
+        !parsed?.doctor_explanation?.one_sentence_conclusion ||
+        !parsed?.stool_features?.shape_desc ||
+        !parsed?.stool_features?.color_desc ||
+        !parsed?.stool_features?.texture_desc);
+    if (needsCriticalRetry) {
+      const strictPayload = buildStrictPayload(payload);
+      const retry = await callOpenAI(apiKey, strictPayload, usedModel, { allowFallback: false });
+      if (retry.r.ok) {
+        const retryData = JSON.parse(retry.raw);
+        const retryText = extractOutputText(retryData);
+        const retryCleaned = sanitizeRawText(retryText || "");
+        const retryExtracted = extractJsonFromText(retryCleaned);
+        try {
+          parsed = JSON.parse(retryCleaned);
+          usedModel = retry.model;
+        } catch {
+          if (retryExtracted) {
+            try {
+              parsed = JSON.parse(retryExtracted);
+              usedModel = retry.model;
+            } catch {
+              parsed = null;
+            }
+          } else {
+            parsed = null;
+          }
+        }
+      }
+      if (!parsed) {
+        const fallback = normalizeResult(buildModelOutputInvalid(usedModel, r.headers.get("x-request-id") || ""));
+        fallback.model_used = usedModel;
+        fallback.model_primary = getPrimaryModel();
+        fallback.model_fallback = getFallbackModel();
+        fallback.used_fallback = usedFallback;
+        fallback.primary_error = primaryError || "missing_required_fields";
         res.setHeader("x-openai-model", usedModel || model);
         return res.status(200).json(fallback);
       }
@@ -1107,6 +1391,10 @@ app.post("/analyze", async (req, res) => {
 
     const normalized = normalizeResult(parsed);
     normalized.model_used = usedModel;
+    normalized.model_primary = getPrimaryModel();
+    normalized.model_fallback = getFallbackModel();
+    normalized.used_fallback = usedFallback;
+    normalized.primary_error = primaryError;
     if ((req.body?.context || req.body?.context_input) && !normalized.context_input) {
       normalized.context_input = req.body.context || req.body.context_input;
     }
