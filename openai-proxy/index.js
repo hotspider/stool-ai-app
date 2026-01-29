@@ -261,7 +261,7 @@ function extractJsonFromText(text) {
 function sanitizeRawText(text) {
   if (!text) return "";
   let cleaned = text.trim();
-  cleaned = cleaned.replace(/^```(?:json)?/i, "").replace(/```$/i, "");
+  cleaned = cleaned.replace(/```(?:json)?/gi, "");
   return cleaned.trim();
 }
 
@@ -956,20 +956,25 @@ app.post("/analyze", async (req, res) => {
     const model = pickModel(req.body);
     res.setHeader("x-proxy-version", PROXY_VERSION);
     res.setHeader("schema_version", "2");
+    res.setHeader("x-openai-model", model);
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json(
+      const errResult = normalizeResult(
         buildErrorResult("MISSING_API_KEY", "OPENAI_API_KEY is not set", model)
       );
+      errResult.model_used = model;
+      return res.status(200).json(errResult);
     }
 
     const { image } = req.body || {};
     const imageDataUrl = normalizeImageToDataUrl(image);
     if (!imageDataUrl) {
-      return res.status(400).json(
+      const errResult = normalizeResult(
         buildErrorResult("NO_IMAGE", "image (base64 string) is required", model)
       );
+      errResult.model_used = model;
+      return res.status(200).json(errResult);
     }
 
     const payload = {
@@ -1023,20 +1028,26 @@ app.post("/analyze", async (req, res) => {
     const { r, raw } = initialResponse;
     let usedModel = initialResponse.model;
     console.log(`[OPENAI] response status=${r.status}`);
+    res.setHeader("x-openai-model", usedModel || model);
 
-    res.setHeader("x-openai-model", usedModel);
     if (!r.ok) {
-      return res.status(502).json(
+      const errResult = normalizeResult(
         buildErrorResult("OPENAI_ERROR", raw || `OpenAI failed (${r.status})`, usedModel)
       );
+      errResult.model_used = usedModel;
+      res.setHeader("x-openai-model", usedModel || model);
+      return res.status(200).json(errResult);
     }
 
     const data = JSON.parse(raw);
     const outputText = extractOutputText(data);
     if (!outputText) {
-      return res.status(502).json(
+      const errResult = normalizeResult(
         buildErrorResult("EMPTY_OUTPUT", "OpenAI response missing output text", usedModel)
       );
+      errResult.model_used = usedModel;
+      res.setHeader("x-openai-model", usedModel || model);
+      return res.status(200).json(errResult);
     }
 
     let parsed;
@@ -1069,8 +1080,10 @@ app.post("/analyze", async (req, res) => {
       }
       if (!parsed) {
         const requestId = r.headers.get("x-request-id") || "";
-        const fallback = buildModelOutputInvalid(usedModel, requestId);
+        const fallback = normalizeResult(buildModelOutputInvalid(usedModel, requestId));
         fallback.raw_preview = String(cleanedText).slice(0, 500);
+        fallback.model_used = usedModel;
+        res.setHeader("x-openai-model", usedModel || model);
         return res.status(200).json(fallback);
       }
     }
@@ -1089,10 +1102,16 @@ app.post("/analyze", async (req, res) => {
       normalized.input_echo.context = req.body?.context || req.body?.context_input || {};
     }
     res.setHeader("schema_version", String(normalized.schema_version || 2));
-    return res.json(normalized);
+    res.setHeader("x-openai-model", usedModel || model);
+    return res.status(200).json(normalized);
   } catch (err) {
     console.error("proxy /analyze error", err);
-    return res.status(500).json({ ok: false, error: "PROXY_EXCEPTION", message: String(err?.message || err) });
+    const errResult = normalizeResult(
+      buildErrorResult("PROXY_EXCEPTION", String(err?.message || err), getPrimaryModel())
+    );
+    errResult.model_used = getPrimaryModel();
+    res.setHeader("x-openai-model", getPrimaryModel());
+    return res.status(200).json(errResult);
   }
 });
 
