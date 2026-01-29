@@ -8,6 +8,7 @@ class AppScaffold extends StatelessWidget {
   final List<Widget>? actions;
   final EdgeInsets? padding;
   final Widget? bottomNavigationBar;
+  final bool? resizeToAvoidBottomInset;
 
   const AppScaffold({
     super.key,
@@ -16,6 +17,7 @@ class AppScaffold extends StatelessWidget {
     this.actions,
     this.padding,
     this.bottomNavigationBar,
+    this.resizeToAvoidBottomInset,
   });
 
   @override
@@ -26,6 +28,7 @@ class AppScaffold extends StatelessWidget {
         centerTitle: true,
         actions: actions,
       ),
+      resizeToAvoidBottomInset: resizeToAvoidBottomInset,
       body: SafeArea(
         child: Padding(
           padding: padding ?? const EdgeInsets.all(AppSpace.s20),

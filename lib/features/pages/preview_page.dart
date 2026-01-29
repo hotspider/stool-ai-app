@@ -360,110 +360,125 @@ class _PreviewPageState extends State<PreviewPage> {
 
     return AppScaffold(
       title: l10n.previewTitle,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SoftCard(
-            padding: EdgeInsets.zero,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppTokens.r16),
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: Image.memory(
-                  _bytes!,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
+      padding: EdgeInsets.zero,
+      resizeToAvoidBottomInset: true,
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpace.s16),
+          child: ElevatedButton(
+            onPressed: canAnalyze ? _startAnalyze : null,
+            child: _isAnalyzing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('提交并分析'),
           ),
-          const SizedBox(height: AppTokens.s12),
-          if (_isValidating)
-            Row(
-              children: [
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 8),
-                Text(l10n.previewValidating),
-              ],
-            )
-          else if (_validation?.ok == true && _validation?.weakPass == true)
-            Text(
-              l10n.previewWeakPass,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: AppTokens.riskMedium),
-            )
-          else if (_validation != null && _validation!.ok == false)
-            Text(
-              _errorDescription(_validation!.reason, _validation!.message),
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: AppTokens.riskMedium),
-            )
-          else if (_validation?.ok == true)
-            Text(
-              l10n.previewPass,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          const SizedBox(height: AppTokens.s12),
-          SoftCard(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTokens.s12,
-              vertical: AppTokens.s8,
-            ),
-            child: OptionalContextPanel(
-              initial: _ctx,
-              onChanged: (next) => _ctx = next,
-            ),
-          ),
-          const SizedBox(height: AppTokens.s24),
-          Row(
-            children: [
-              Expanded(
-                child: PressScale(
-                  child: OutlinedButton(
-                    onPressed: () => _repick(ImageSourceType.gallery),
-                    child: Text(l10n.previewRechoose),
-                  ),
-                ),
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildImagePreview(),
+            const Divider(),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                child: _buildExtraInputsForm(canAnalyze),
               ),
-              const SizedBox(width: AppTokens.s12),
-              Expanded(
-                child: PressScale(
-                  enabled: canAnalyze,
-                  child: FilledButton(
-                    onPressed: canAnalyze ? _startAnalyze : null,
-                    child: _isAnalyzing
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(l10n.previewStartAnalyze),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (_isAnalyzing) ...[
-            const SizedBox(height: AppTokens.s8),
-            Text(
-              '预计 10~30 秒',
-              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
-          const SizedBox(height: AppTokens.s12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImagePreview() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: SoftCard(
+        padding: EdgeInsets.zero,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppTokens.r16),
+          child: SizedBox(
+            height: 220,
+            child: Image.memory(
+              _bytes!,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExtraInputsForm(bool canAnalyze) {
+    final l10n = AppLocalizations.of(context)!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_isValidating)
+          Row(
+            children: [
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 8),
+              Text(l10n.previewValidating),
+            ],
+          )
+        else if (_validation?.ok == true && _validation?.weakPass == true)
           Text(
-            l10n.previewHint,
+            l10n.previewWeakPass,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: AppTokens.riskMedium),
+          )
+        else if (_validation != null && _validation!.ok == false)
+          Text(
+            _errorDescription(_validation!.reason, _validation!.message),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: AppTokens.riskMedium),
+          )
+        else if (_validation?.ok == true)
+          Text(
+            l10n.previewPass,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        const SizedBox(height: AppSpace.s12),
+        OptionalContextPanel(
+          initial: _ctx,
+          onChanged: (next) => _ctx = next,
+        ),
+        const SizedBox(height: AppSpace.s24),
+        PressScale(
+          child: OutlinedButton(
+            onPressed: () => _repick(ImageSourceType.gallery),
+            child: Text(l10n.previewRechoose),
+          ),
+        ),
+        if (_isAnalyzing) ...[
+          const SizedBox(height: AppSpace.s8),
+          Text(
+            '预计 10~30 秒',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
-      ),
+        const SizedBox(height: AppSpace.s12),
+        Text(
+          l10n.previewHint,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        if (!canAnalyze) const SizedBox(height: AppSpace.s6),
+      ],
     );
   }
 }
