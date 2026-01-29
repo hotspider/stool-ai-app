@@ -6,6 +6,17 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
 const PROXY_VERSION = process.env.RENDER_GIT_COMMIT || process.env.PROXY_VERSION || "dev";
+const BUILD_ID =
+  process.env.BUILD_ID ||
+  (process.env.RENDER_GIT_COMMIT
+    ? process.env.RENDER_GIT_COMMIT.slice(0, 7)
+    : process.env.PROXY_VERSION
+      ? process.env.PROXY_VERSION.slice(0, 7)
+      : "unknown");
+app.use((req, res, next) => {
+  res.setHeader("x-build-id", BUILD_ID);
+  next();
+});
 const { V2_SCHEMA_JSON } = require("./src/schema/v2_schema");
 const { isStoolImageGuard } = require("./src/analyze/guard/is_stool_image");
 const MODEL_ALLOWLIST = new Set(["gpt-5.2", "gpt-5d"]);
@@ -222,7 +233,7 @@ const SYSTEM_PROMPT = `
 
 const STRICT_SYSTEM_PROMPT = `
 你必须输出严格 JSON（不要 Markdown、不要多余文字）。输出结构必须包含 schema_version=2 的全部字段，不允许任何额外字段。
-只输出 JSON，不要解释。若不确定，请在 uncertainty_note 明确原因，但仍返回完整 JSON 对象。
+只输出一个 JSON，不要任何解释/markdown/代码块。若不确定，请在 uncertainty_note 明确原因，但仍返回完整 JSON 对象。
 `.trim();
 
 const JSON_SCHEMA = {
@@ -233,29 +244,23 @@ const JSON_SCHEMA = {
 
 function extractJsonFromText(text) {
   if (!text) return "";
-  const candidates = [];
-  for (let i = 0; i < text.length; i += 1) {
-    if (text[i] !== "{") continue;
-    let depth = 0;
-    for (let j = i; j < text.length; j += 1) {
-      if (text[j] === "{") depth += 1;
-      if (text[j] === "}") depth -= 1;
-      if (depth === 0) {
-        candidates.push(text.slice(i, j + 1));
-        break;
+  const start = text.indexOf("{");
+  if (start === -1) return "";
+  let depth = 0;
+  for (let i = start; i < text.length; i += 1) {
+    if (text[i] === "{") depth += 1;
+    if (text[i] === "}") depth -= 1;
+    if (depth === 0) {
+      const candidate = text.slice(start, i + 1);
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch {
+        return "";
       }
     }
   }
-  let best = "";
-  for (const c of candidates) {
-    try {
-      JSON.parse(c);
-      if (c.length > best.length) best = c;
-    } catch {
-      // ignore
-    }
-  }
-  return best;
+  return "";
 }
 
 function sanitizeRawText(text) {
@@ -270,17 +275,17 @@ function buildModelOutputInvalid(usedModel, requestId) {
   return {
     ...base,
     ok: false,
-    error_code: "INVALID_JSON",
-    error: "INVALID_JSON",
+    error_code: "PROXY_ERROR",
+    error: "PROXY_ERROR",
     message: "Model returned non-JSON output",
     schema_version: 2,
     proxy_version: PROXY_VERSION,
     model_used: usedModel || base.model_used,
-    headline: "模型输出异常，请重试",
+    headline: "服务暂不可用，请稍后重试",
     score: 0,
     risk_level: "unknown",
     confidence: 0,
-    uncertainty_note: "模型输出未按 JSON 结构返回，可稍后重试或更换清晰图片。",
+    uncertainty_note: "服务繁忙或网络异常，可稍后重试或更换清晰图片。",
     ui_strings: {
       ...base.ui_strings,
       sections: [
@@ -944,6 +949,7 @@ app.get("/ping", (_req, res) =>
     proxy_version: PROXY_VERSION,
     schema_version: 2,
     model: getPrimaryModel(),
+    build_id: BUILD_ID,
   })
 );
 app.get("/health", (_req, res) => res.json({ ok: true, ts: nowISO() }));
@@ -1055,6 +1061,9 @@ app.post("/analyze", async (req, res) => {
     try {
       parsed = JSON.parse(cleanedText);
     } catch (e) {
+      console.log(
+        `[PARSE_FAIL] output_text preview=${String(outputText || "").slice(0, 300)}`
+      );
       const extracted = extractJsonFromText(cleanedText);
       if (extracted) {
         try {
@@ -1074,7 +1083,17 @@ app.post("/analyze", async (req, res) => {
             parsed = JSON.parse(retryCleaned);
             usedModel = retry.model;
           } catch (retryErr) {
-            parsed = null;
+            const retryExtracted = extractJsonFromText(retryCleaned);
+            if (retryExtracted) {
+              try {
+                parsed = JSON.parse(retryExtracted);
+                usedModel = retry.model;
+              } catch {
+                parsed = null;
+              }
+            } else {
+              parsed = null;
+            }
           }
         }
       }
