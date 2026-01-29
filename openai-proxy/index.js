@@ -490,6 +490,9 @@ function normalizeResult(parsed) {
   out.context_input = typeof out.context_input === "object" && out.context_input
     ? out.context_input
     : undefined;
+  out.input_context = typeof out.input_context === "object" && out.input_context
+    ? out.input_context
+    : undefined;
   out.score = Number.isFinite(Number(out.score)) ? Number(out.score) : base.score;
   out.risk_level = ["low", "medium", "high"].includes(out.risk_level)
     ? out.risk_level
@@ -1023,6 +1026,9 @@ app.post("/analyze", async (req, res) => {
     normalized.model_used = usedModel;
     if ((req.body?.context || req.body?.context_input) && !normalized.context_input) {
       normalized.context_input = req.body.context || req.body.context_input;
+    }
+    if ((req.body?.context || req.body?.context_input) && !normalized.input_context) {
+      normalized.input_context = req.body.context || req.body.context_input;
     }
     res.setHeader("schema_version", String(normalized.schema_version || 2));
     return res.json(normalized);

@@ -236,6 +236,7 @@ export const V2_SCHEMA_JSON = {
     "proxy_version": { "type": "string", "minLength": 1 },
     "worker_version": { "type": "string" },
     "context_input": { "type": "object" },
+    "input_context": { "type": "object" },
     "explanation": { "type": "string" },
     "error_code": { "type": "string" },
     "error": { "type": "string" },

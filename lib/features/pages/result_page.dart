@@ -756,12 +756,14 @@ class _ResultPageState extends State<ResultPage> {
       structured.doctorExplanation.combinedJudgement,
       fallback: _safeText(structured.interpretation.overallJudgement, fallback: ''),
     );
-    final contextBullets = widget.contextSummary != null &&
-            widget.contextSummary!.trim().isNotEmpty
-        ? [widget.contextSummary!.trim()]
+    final contextSummary = structured.inputContext != null
+        ? _buildContextSummaryFromInput(structured.inputContext!)
+        : widget.contextSummary;
+    final contextBullets = contextSummary != null && contextSummary.trim().isNotEmpty
+        ? [contextSummary.trim()]
         : structured.interpretation.howContextAffects.isNotEmpty
             ? structured.interpretation.howContextAffects
-            : const ['未提供补充信息，建议补充近期饮食与症状。'];
+            : const ['你未填写补充信息，本次仅基于图片进行判断。'];
     final reassure = _safeText(
       longform.reassure,
       fallback: '如果精神好、吃得下、睡得稳、次数不多，大多属于可观察型。',
@@ -987,6 +989,76 @@ class _ResultPageState extends State<ResultPage> {
     if (value.toLowerCase().contains('unknown')) return fallback;
     if (value.contains('信息不足')) return fallback;
     return value;
+  }
+
+  String _buildContextSummaryFromInput(Map<String, dynamic> ctx) {
+    if (ctx.isEmpty) {
+      return '你未填写补充信息，本次仅基于图片进行判断。';
+    }
+    final parts = <String>[];
+    final mood = ctx['mood_state'];
+    if (mood == 'good') parts.add('精神状态：良好');
+    if (mood == 'normal') parts.add('精神状态：一般');
+    if (mood == 'poor') parts.add('精神状态：偏差');
+
+    final appetite = ctx['appetite'];
+    if (appetite == 'normal') parts.add('食欲：正常');
+    if (appetite == 'slightly_low') parts.add('食欲：略少');
+    if (appetite == 'poor') parts.add('食欲：明显差');
+
+    final count = ctx['poop_count_24h'];
+    if (count != null) parts.add('24小时排便：$count 次');
+
+    final pain = ctx['pain_or_strain'];
+    if (pain == true) parts.add('排便：有明显用力/不适');
+    if (pain == false) parts.add('排便：无明显不适');
+
+    final diet = (ctx['diet_tags'] as List?)?.cast<String>();
+    if (diet != null && diet.isNotEmpty) {
+      parts.add('近期饮食：${diet.map(_dietTagLabel).join('、')}');
+    }
+
+    final hyd = ctx['hydration_intake'];
+    if (hyd == 'normal') parts.add('饮水：正常');
+    if (hyd == 'low') parts.add('饮水：偏少');
+    if (hyd == 'high') parts.add('饮水：偏多');
+
+    final warn = (ctx['warning_signs'] as List?)?.cast<String>();
+    if (warn != null && warn.isNotEmpty) {
+      parts.add('危险信号：已勾选（建议重点关注）');
+    }
+
+    final odor = ctx['odor'];
+    if (odor == 'none') parts.add('气味：无明显');
+    if (odor == 'stronger') parts.add('气味：比平时重');
+    if (odor == 'foul') parts.add('气味：非常臭/刺鼻');
+
+    return parts.join('；');
+  }
+
+  String _dietTagLabel(String raw) {
+    switch (raw) {
+      case 'fruit':
+        return '水果多';
+      case 'vegetable':
+        return '绿叶菜多';
+      case 'meat':
+        return '肉类多';
+      case 'soup':
+        return '汤水多';
+      case 'milk':
+        return '奶/配方奶';
+      case 'yogurt':
+        return '酸奶';
+      case 'cold':
+        return '冷饮/凉食';
+      case 'oily':
+        return '油腻';
+      case 'new_food':
+        return '新加辅食';
+      default:
+        return raw;
+    }
   }
 
   String _featureLabelOrUnknown(AppLocalizations l10n, String? value) {

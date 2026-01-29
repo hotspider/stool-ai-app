@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:app/l10n/app_localizations.dart';
 
@@ -13,9 +12,11 @@ import '../../design/tokens.dart';
 import '../../design/widgets/app_scaffold.dart';
 import '../../design/widgets/press_scale.dart';
 import '../../design/widgets/soft_card.dart';
+import '../models/analyze_context.dart';
 import '../models/result_payload.dart';
 import '../services/api_service.dart';
 import '../widgets/error_state_card.dart';
+import '../widgets/optional_context_panel.dart';
 
 class PreviewPage extends StatefulWidget {
   final ImageSelection? selection;
@@ -28,15 +29,7 @@ class PreviewPage extends StatefulWidget {
 
 class _PreviewPageState extends State<PreviewPage> {
   final ImageValidator _validator = BasicImageValidator();
-  final Set<String> _dietTags = {};
-  final Set<String> _warningSigns = {};
-  String? _moodState;
-  String? _appetite;
-  String? _hydrationIntake;
-  String? _odor;
-  bool _painOrStrain = false;
-  int _poopCount24h = 1;
-  bool _poopCountTouched = false;
+  AnalyzeContext _ctx = const AnalyzeContext();
   Uint8List? _bytes;
   bool _isValidating = false;
   bool _isAnalyzing = false;
@@ -258,12 +251,11 @@ class _PreviewPageState extends State<PreviewPage> {
       _isAnalyzing = true;
     });
     try {
-      final context = _buildContextInput();
       final result = await ApiService.analyzeImage(
         imageBytes: _bytes!,
-        odor: _odor ?? 'none',
-        painOrStrain: _painOrStrain,
-        context: context,
+        odor: _ctx.odor ?? 'none',
+        painOrStrain: _ctx.painOrStrain ?? false,
+        context: _ctx,
       );
       if (!mounted) {
         return;
@@ -273,8 +265,8 @@ class _PreviewPageState extends State<PreviewPage> {
         analysis: result.analysis,
         advice: result.advice,
         structured: result.structured,
-        contextInput: context,
-        contextSummary: _buildContextSummary(context),
+        contextInput: _ctx.toJson(),
+        contextSummary: _buildContextSummary(_ctx.toJson()),
         validationWarning:
             _validation?.weakPass == true ? l10n.previewWeakPass : null,
       );
@@ -321,32 +313,6 @@ class _PreviewPageState extends State<PreviewPage> {
         });
       }
     }
-  }
-
-  Map<String, dynamic>? _buildContextInput() {
-    final hasAny = _moodState != null ||
-        _appetite != null ||
-        _hydrationIntake != null ||
-        _odor != null ||
-        _dietTags.isNotEmpty ||
-        _warningSigns.isNotEmpty ||
-        _painOrStrain ||
-        _poopCountTouched;
-    if (!hasAny) {
-      return null;
-    }
-    final context = <String, dynamic>{
-      'age_months': 30,
-      if (_moodState != null) 'mood_state': _moodState,
-      if (_appetite != null) 'appetite': _appetite,
-      if (_poopCountTouched) 'poop_count_24h': _poopCount24h,
-      'pain_or_strain': _painOrStrain,
-      if (_dietTags.isNotEmpty) 'diet_tags': _dietTags.toList(),
-      if (_hydrationIntake != null) 'hydration_intake': _hydrationIntake,
-      if (_warningSigns.isNotEmpty) 'warning_signs': _warningSigns.toList(),
-      if (_odor != null) 'odor': _odor,
-    };
-    return context;
   }
 
   String _buildContextSummary(Map<String, dynamic>? context) {
@@ -399,153 +365,6 @@ class _PreviewPageState extends State<PreviewPage> {
     return '你填写的情况显示：${parts.join('，')}。';
   }
 
-  Widget _buildSingleChoice({
-    required String title,
-    required String? value,
-    required Map<String, String> options,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppTokens.s8),
-        Wrap(
-          spacing: AppTokens.s8,
-          runSpacing: AppTokens.s8,
-          children: options.entries
-              .map(
-                (entry) => ChoiceChip(
-                  label: Text(entry.key),
-                  selected: value == entry.value,
-                  onSelected: (_) => setState(
-                    () => onChanged(value == entry.value ? null : entry.value),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTagGroup({
-    required String title,
-    required Map<String, String> options,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppTokens.s8),
-        Wrap(
-          spacing: AppTokens.s8,
-          runSpacing: AppTokens.s8,
-          children: options.entries
-              .map(
-                (entry) => FilterChip(
-                  label: Text(entry.key),
-                  selected: _dietTags.contains(entry.value),
-                  onSelected: (value) {
-                    setState(() {
-                      if (value) {
-                        _dietTags.add(entry.value);
-                      } else {
-                        _dietTags.remove(entry.value);
-                      }
-                    });
-                  },
-                ),
-              )
-              .toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMultiSelect({
-    required String title,
-    required Map<String, String> options,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppTokens.s8),
-        ...options.entries.map(
-          (entry) => CheckboxListTile(
-            value: _warningSigns.contains(entry.value),
-            onChanged: (value) {
-              setState(() {
-                if (value == true) {
-                  _warningSigns.add(entry.value);
-                } else {
-                  _warningSigns.remove(entry.value);
-                }
-              });
-            },
-            title: Text(entry.key),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStepper({
-    required String title,
-    required int value,
-    required ValueChanged<int> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppTokens.s8),
-        Row(
-          children: [
-            IconButton(
-              onPressed: value <= 0 ? null : () => onChanged(value - 1),
-              icon: const Icon(Icons.remove_circle_outline),
-            ),
-            Text('$value', style: Theme.of(context).textTheme.titleMedium),
-            IconButton(
-              onPressed: value >= 10 ? null : () => onChanged(value + 1),
-              icon: const Icon(Icons.add_circle_outline),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  int _filledCount() {
-    var count = 0;
-    if (_moodState != null) count += 1;
-    if (_appetite != null) count += 1;
-    if (_poopCountTouched) count += 1;
-    if (_painOrStrain) count += 1;
-    if (_dietTags.isNotEmpty) count += 1;
-    if (_hydrationIntake != null) count += 1;
-    if (_warningSigns.isNotEmpty) count += 1;
-    if (_odor != null) count += 1;
-    return count;
-  }
-
-  void _resetInputs() {
-    setState(() {
-      _moodState = null;
-      _appetite = null;
-      _hydrationIntake = null;
-      _odor = null;
-      _painOrStrain = false;
-      _poopCount24h = 1;
-      _poopCountTouched = false;
-      _dietTags.clear();
-      _warningSigns.clear();
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -622,119 +441,9 @@ class _PreviewPageState extends State<PreviewPage> {
               horizontal: AppTokens.s12,
               vertical: AppTokens.s8,
             ),
-            child: ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: Row(
-                children: [
-                  const Text('补充信息（可选）'),
-                  const SizedBox(width: AppTokens.s8),
-                  Text('已填写 ${_filledCount()}/8 项',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ),
-              subtitle: const Text('建议填写，提升准确度'),
-              childrenPadding: const EdgeInsets.only(bottom: AppTokens.s12),
-              children: [
-                _buildSingleChoice(
-                  title: '精神状态',
-                  value: _moodState,
-                  options: const {
-                    '😊 精神好（活跃/玩耍）': 'good',
-                    '😐 一般（略疲惫）': 'normal',
-                    '😴 精神差（嗜睡/不爱动）': 'poor',
-                  },
-                  onChanged: (next) => _moodState = next,
-                ),
-                const SizedBox(height: AppTokens.s12),
-                _buildSingleChoice(
-                  title: '食欲情况',
-                  value: _appetite,
-                  options: const {
-                    '👍 吃得和平时差不多': 'normal',
-                    '😕 吃得少一点': 'slightly_low',
-                    '❌ 明显不想吃': 'poor',
-                  },
-                  onChanged: (next) => _appetite = next,
-                ),
-                const SizedBox(height: AppTokens.s12),
-                _buildStepper(
-                  title: '24 小时内排便次数',
-                  value: _poopCount24h,
-                  onChanged: (next) {
-                    setState(() {
-                      _poopCount24h = next;
-                      _poopCountTouched = true;
-                    });
-                  },
-                ),
-                const SizedBox(height: AppTokens.s12),
-                SwitchListTile(
-                  value: _painOrStrain,
-                  onChanged: (v) => setState(() => _painOrStrain = v),
-                  title: const Text('是否疼痛或用力'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                const SizedBox(height: AppTokens.s12),
-                _buildTagGroup(
-                  title: '最近 24h 吃过哪些',
-                  options: const {
-                    '水果多（香蕉/苹果/梨）': 'fruit',
-                    '绿叶菜多': 'vegetable',
-                    '肉类多': 'meat',
-                    '汤水多': 'soup',
-                    '奶 / 配方奶': 'milk',
-                    '酸奶': 'yogurt',
-                    '冷饮/凉食': 'cold',
-                    '油腻食物': 'greasy',
-                    '新加辅食': 'new_food',
-                  },
-                ),
-                const SizedBox(height: AppTokens.s12),
-                _buildSingleChoice(
-                  title: '饮水/喝的东西',
-                  value: _hydrationIntake,
-                  options: const {
-                    '正常喝水': 'normal',
-                    '喝得偏少': 'low',
-                    '最近喝得很多': 'high',
-                  },
-                  onChanged: (next) => _hydrationIntake = next,
-                ),
-                const SizedBox(height: AppTokens.s12),
-                _buildMultiSelect(
-                  title: '是否出现以下情况',
-                  options: const {
-                    '发热': 'fever',
-                    '呕吐': 'vomiting',
-                    '明显腹痛': 'abdominal_pain',
-                    '血丝/粘液': 'blood_or_mucus',
-                    '黑便/灰白便': 'black_or_pale',
-                  },
-                ),
-                const SizedBox(height: AppTokens.s12),
-                DropdownButtonFormField<String>(
-                  value: _odor,
-                  decoration: const InputDecoration(
-                    labelText: '气味',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'none', child: Text('无明显气味')),
-                    DropdownMenuItem(value: 'stronger', child: Text('比平时重')),
-                    DropdownMenuItem(value: 'foul', child: Text('非常臭 / 刺鼻')),
-                  ],
-                  onChanged: (value) => setState(() => _odor = value),
-                ),
-                const SizedBox(height: AppTokens.s12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _resetInputs,
-                    child: const Text('恢复默认'),
-                  ),
-                ),
-              ],
+            child: OptionalContextPanel(
+              initial: _ctx,
+              onChanged: (next) => _ctx = next,
             ),
           ),
           const SizedBox(height: AppTokens.s24),

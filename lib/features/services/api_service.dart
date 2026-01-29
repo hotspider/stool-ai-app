@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/advice_response.dart';
+import '../models/analyze_context.dart';
 import '../models/analyze_response.dart';
 import '../models/result_payload.dart';
 import '../models/stool_analysis_result.dart';
@@ -23,7 +24,7 @@ class ApiService {
     String odor = '',
     bool painOrStrain = false,
     String dietKeywords = '',
-    Map<String, dynamic>? context,
+    AnalyzeContext? context,
   }) async {
     debugPrint('ApiService analyze sending request');
     final url = Uri.parse('$_baseUrl/analyze');
@@ -35,8 +36,9 @@ class ApiService {
         'odor': odor,
         'pain_or_strain': painOrStrain,
         'diet_keywords': dietKeywords,
-        if (context != null && context.isNotEmpty) 'context': context,
+        if (context != null && !context.isEmpty) 'context': context.toJson(),
       };
+      debugPrint('[ApiService] context=${context?.toJson()}');
       final jsonBody = jsonEncode(bodyMap);
       const headers = {
         'Content-Type': 'application/json; charset=utf-8',
@@ -66,6 +68,10 @@ class ApiService {
         debugPrint(
           'ApiService body schema_version: ${body['schema_version']} '
           'model_used: ${body['model_used']}',
+        );
+        debugPrint(
+          '[ApiService] response schema_version=${body['schema_version']} '
+          'model_used=${body['model_used']}',
         );
       }
       if (response.statusCode >= 400) {

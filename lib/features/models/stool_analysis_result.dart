@@ -16,6 +16,7 @@ class StoolAnalysisResult {
   final String modelUsed;
   final bool isStoolImage;
   final String explanation;
+  final Map<String, dynamic>? inputContext;
   final String headline;
   final int score;
   final String riskLevel;
@@ -44,6 +45,7 @@ class StoolAnalysisResult {
     required this.modelUsed,
     required this.isStoolImage,
     required this.explanation,
+    required this.inputContext,
     required this.headline,
     required this.score,
     required this.riskLevel,
@@ -144,6 +146,15 @@ class StoolAnalysisResult {
     final uncertaintyNote = _string('uncertainty_note');
     final isStoolImage = json['is_stool_image'] != false;
     final explanation = json['explanation']?.toString() ?? '';
+    final inputContext = json['input_context'] is Map
+        ? (json['input_context'] as Map)
+            .map((k, v) => MapEntry(k.toString(), v))
+        : json['context'] is Map
+            ? (json['context'] as Map).map((k, v) => MapEntry(k.toString(), v))
+            : json['context_input'] is Map
+                ? (json['context_input'] as Map)
+                    .map((k, v) => MapEntry(k.toString(), v))
+                : null;
 
     StoolFeatures stoolFeatures;
     final stoolRaw = json['stool_features'];
@@ -204,6 +215,7 @@ class StoolAnalysisResult {
         modelUsed: modelUsed,
         isStoolImage: isStoolImage,
         explanation: explanation,
+        inputContext: inputContext,
         headline: headline.isEmpty ? summary : headline,
         score: score,
         riskLevel: riskLevel,
