@@ -658,7 +658,9 @@ app.post("/analyze", async (req, res) => {
       text: {
         format: {
           type: "json_schema",
-          json_schema: JSON_SCHEMA,
+          name: JSON_SCHEMA.name,
+          schema: JSON_SCHEMA.schema,
+          strict: true,
         },
       },
       temperature: 0,
