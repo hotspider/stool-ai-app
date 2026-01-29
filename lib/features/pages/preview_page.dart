@@ -2,7 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
+
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:app/l10n/app_localizations.dart';
 
@@ -19,6 +22,7 @@ import '../models/analyze_context.dart';
 import '../models/result_payload.dart';
 import '../services/api_service.dart';
 import '../widgets/error_state_card.dart';
+import '../services/image_crop_service.dart';
 
 class PreviewPage extends StatefulWidget {
   final ImageSelection? selection;
@@ -32,6 +36,7 @@ class PreviewPage extends StatefulWidget {
 class _PreviewPageState extends State<PreviewPage> {
   final ImageValidator _validator = BasicImageValidator();
   AnalyzeContext _ctx = const AnalyzeContext();
+  bool _userConfirmedStool = false;
   Uint8List? _bytes;
   bool _isValidating = false;
   bool _isAnalyzing = false;
@@ -280,6 +285,10 @@ class _PreviewPageState extends State<PreviewPage> {
     if (_bytes == null || _isAnalyzing) {
       return;
     }
+    if (_validation != null && _validation!.ok == false) {
+      await _showQualityDialog(_validation!.reason);
+      return;
+    }
     debugPrint(
       'Preview analyze: bytes=${_bytes?.length ?? 0}, validation=${_validation?.reason}, url=${ApiService.baseUrl}/analyze',
     );
@@ -292,6 +301,7 @@ class _PreviewPageState extends State<PreviewPage> {
         odor: 'none',
         painOrStrain: false,
         context: _ctx,
+        userConfirmedStool: _userConfirmedStool,
       );
       if (!mounted) {
         return;
@@ -359,6 +369,83 @@ class _PreviewPageState extends State<PreviewPage> {
     }
   }
 
+  Future<void> _showQualityDialog(ImageValidationReason reason) async {
+    if (!mounted) {
+      return;
+    }
+    final reasonText = _qualityReasonText(reason);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('图片不清晰，建议重拍'),
+        content: Text('原因：$reasonText\n建议：目标占画面 50% 以上'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _recropCurrent();
+            },
+            child: const Text('重新裁剪'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _repick(ImageSourceType.gallery);
+            },
+            child: const Text('重新选择'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _qualityReasonText(ImageValidationReason reason) {
+    switch (reason) {
+      case ImageValidationReason.tooSmall:
+        return '目标太小';
+      case ImageValidationReason.tooDark:
+        return '光线不足';
+      case ImageValidationReason.tooBlurry:
+        return '对焦不清';
+      case ImageValidationReason.notTarget:
+        return '目标不在画面中';
+      case ImageValidationReason.unknown:
+        return '图片无法识别';
+    }
+  }
+
+  Future<void> _recropCurrent() async {
+    if (_bytes == null) {
+      return;
+    }
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/stool_preview_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await tempFile.writeAsBytes(_bytes!, flush: true);
+      final cropped = await ImageCropService.crop(tempFile);
+      if (cropped == null) {
+        return;
+      }
+      final newBytes = await cropped.readAsBytes();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _bytes = newBytes;
+        _validation = null;
+      });
+      _validate();
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.previewPickFailed)),
+      );
+    }
+  }
+
   String _buildContextSummary(Map<String, dynamic>? context) {
     if (context == null || context.isEmpty) {
       return '你填写的情况显示：未补充额外信息。';
@@ -408,10 +495,20 @@ class _PreviewPageState extends State<PreviewPage> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(UiSpacing.md),
-          child: PrimaryButton(
-            label: '提交并分析',
-            isLoading: _isAnalyzing,
-            onPressed: canAnalyze ? _startAnalyze : null,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                canAnalyze ? '将结合图片与补充信息进行分析' : '请先选择图片',
+                style: UiText.hint,
+              ),
+              const SizedBox(height: UiSpacing.sm),
+              PrimaryButton(
+                label: '提交并分析',
+                isLoading: _isAnalyzing,
+                onPressed: canAnalyze ? _startAnalyze : null,
+              ),
+            ],
           ),
         ),
       ),
@@ -484,6 +581,18 @@ class _PreviewPageState extends State<PreviewPage> {
           )
         else if (_validation?.ok == true)
           Text(l10n.previewPass, style: UiText.hint),
+        const SizedBox(height: 6),
+        Text('建议：目标占画面 50% 以上', style: UiText.hint),
+        const SizedBox(height: UiSpacing.lg),
+        AppCard(
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('我确认这是大便（提高识别容错）'),
+            subtitle: const Text('用于糊状/尿不湿场景，系统会以低置信度继续分析'),
+            value: _userConfirmedStool,
+            onChanged: (v) => setState(() => _userConfirmedStool = v),
+          ),
+        ),
         const SizedBox(height: UiSpacing.lg),
         const SectionHeader(
           icon: Icons.edit_note,

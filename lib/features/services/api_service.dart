@@ -25,6 +25,7 @@ class ApiService {
     bool painOrStrain = false,
     String dietKeywords = '',
     AnalyzeContext? context,
+    bool userConfirmedStool = false,
   }) async {
     final requestId = DateTime.now().microsecondsSinceEpoch.toString();
     debugPrint('ApiService analyze sending request');
@@ -38,6 +39,7 @@ class ApiService {
         'pain_or_strain': painOrStrain,
         'diet_keywords': dietKeywords,
         'context': context?.toJson() ?? {},
+        'user_confirmed_stool': userConfirmedStool,
         'mode': 'classify_then_analyze',
       };
       debugPrint('[Analyze][$requestId] context=${jsonEncode(bodyMap['context'])}');
