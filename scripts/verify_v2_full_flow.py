@@ -47,13 +47,18 @@ def main():
         },
     }
 
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    verify_token = os.environ.get("VERIFY_TOKEN", "").strip()
+    if verify_token:
+        headers["X-Verify-Token"] = verify_token
+
     req = urllib.request.Request(
         "https://api.tapgiga.com/analyze",
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+        headers=headers,
         method="POST",
     )
 
@@ -84,6 +89,8 @@ def main():
 
     if headers.get("x-openai-model", "unknown") == "unknown":
         fail("x-openai-model is unknown")
+    if data.get("model_used", "unknown") == "unknown":
+        fail("model_used is unknown")
 
     stool = data.get("stool_features") or {}
     if not stool.get("shape_desc"):
