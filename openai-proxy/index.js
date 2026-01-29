@@ -7,6 +7,7 @@ app.use(express.json({ limit: "25mb" }));
 
 const PROXY_VERSION = process.env.RENDER_GIT_COMMIT || process.env.PROXY_VERSION || "dev";
 const { V2_SCHEMA_JSON } = require("./src/schema/v2_schema");
+const { isStoolImageGuard } = require("./src/analyze/guard/is_stool_image");
 const MODEL_ALLOWLIST = new Set(["gpt-5.2", "gpt-5d"]);
 
 function normalizeModel(raw, fallback) {
@@ -176,17 +177,27 @@ const SYSTEM_PROMPT = `
 1. 必须先输出“一句话结论（先说重点）”（写进 headline / ui_strings.longform.conclusion），明确：是否像腹泻/是否像感染/更像什么。
 2. “具体怎么看这个便便”必须分为：形态/颜色/质地细节，并且每部分都要写“为什么会这样”（写进 interpretation.why_*，每项>=2）。
 3. 必须输出“结合你填写的情况（很关键）”，并引用 context_input（若提供：recent_foods、recent_drinks、精神、次数、发热、腹痛等），写入 interpretation.how_context_affects（>=3）。
-4. “可能原因”必须按常见程度排序（写入 reasoning_bullets，>=5，且每条是因果链）。
+4. “可能原因”必须按常见程度排序（写入 possible_causes 与 reasoning_bullets，possible_causes>=3，reasoning_bullets>=5）。
 5. “现在需要做什么”必须可执行，分 ✅可以做 / ❌少一点 / 👀观察指标（分别落在 actions_today.*）。
 6. “什么时候需要警惕”必须给明确红旗（red_flags >=5，object 结构 {title, detail}）。
 7. 最后输出“家长安心指标”一句话总结（写入 ui_strings.longform.reassure）。
 8. 语言风格：像儿科医生对家长说话，清晰克制、不吓人；禁止空话；禁止只输出泛泛建议。
-9. 必须填满 required 数组长度下限，任何数组不允许为空。
+9. 必须填满 required 数组长度下限，任何数组不允许为空，避免使用 "unknown" 或 “信息不足” 作为主结论文本。
 10. 若图片无法判断，必须明确写出“缺什么信息/建议怎么拍/建议补充什么”，并仍返回完整 v2 结构（ok=false，但字段齐全）。
 
+二阶段分析输出模板（必须体现为字段内容）：
+1) 一句话结论（先说重点）：写入 doctor_explanation.one_sentence_conclusion 与 headline。
+2) 具体怎么看这个便便：写入 doctor_explanation.shape / color / texture，并同步写入 doctor_explanation.visual_analysis.*。
+3) 结合宝宝情况：写入 interpretation.how_context_affects。
+4) 可能原因：写入 possible_causes（Top3）+ reasoning_bullets。
+5) 现在需要做什么：actions_today（✅/❌/👀）。
+6) 家长安心指标：写入 ui_strings.longform.reassure。
+
 必须输出 JSON 并严格匹配 schema_version=2 的结构，字段如下（仅列要点）：
-- ok, schema_version=2, headline, score, risk_level, confidence, uncertainty_note
-- stool_features: bristol_type, bristol_range, shape_desc, color_desc, texture_desc, volume, wateriness, mucus, foam, blood, undigested_food, separation_layers, odor_level, visible_findings
+- ok, schema_version=2, is_stool_image=true, headline, score, risk_level, confidence, uncertainty_note
+- stool_features: shape, shape_desc, color, color_desc, color_reason, texture, texture_desc, abnormal_signs, bristol_type, bristol_range, volume, wateriness, mucus, foam, blood, undigested_food, separation_layers, odor_level, visible_findings
+- doctor_explanation: one_sentence_conclusion, shape, color, texture, visual_analysis{shape,color,texture}, combined_judgement
+- possible_causes: [{title, explanation}]
 - interpretation: overall_judgement, why_shape[], why_color[], why_texture[], how_context_affects[], confidence_explain
 - reasoning_bullets[], actions_today{diet,hydration,care,avoid,observe}, red_flags[{title,detail}], follow_up_questions[]
 - ui_strings{summary,tags,sections, longform{conclusion,how_to_read,context,causes,todo,red_flags,reassure}}
@@ -309,13 +320,13 @@ function userPromptFromBody(body) {
   const odor = body?.odor ?? "unknown";
   const strain = body?.pain_or_strain;
   const diet = body?.diet_keywords ?? "";
-  const context = body?.context_input;
+  const context = body?.context ?? body?.context_input;
   return `
 幼儿月龄: ${age ?? "unknown"}
 气味: ${odor}
 是否疼痛/费力: ${typeof strain === "boolean" ? String(strain) : "unknown"}
 最近饮食关键词: ${diet || "unknown"}
-补充信息(context_input): ${context ? JSON.stringify(context) : "none"}
+补充信息(context): ${context ? JSON.stringify(context) : "none"}
 
 请基于图片和以上信息给出分析与建议。
 `.trim();
@@ -325,6 +336,7 @@ function buildDefaultResult() {
   return {
     ok: true,
     schema_version: 2,
+    is_stool_image: true,
     headline: "",
     score: 50,
     risk_level: "low",
@@ -333,9 +345,14 @@ function buildDefaultResult() {
     stool_features: {
       bristol_type: null,
       bristol_range: "unknown",
+      shape: "偏软/糊状",
       shape_desc: "unknown",
+      color: "黄褐/偏黄",
       color_desc: "unknown",
+      color_reason: "多与饮食构成和肠道通过速度相关",
+      texture: "细腻/糊状",
       texture_desc: "unknown",
+      abnormal_signs: ["未见明显异常"],
       volume: "unknown",
       wateriness: "none",
       mucus: "none",
@@ -346,6 +363,15 @@ function buildDefaultResult() {
       odor_level: "unknown",
       visible_findings: ["none"],
     },
+    doctor_explanation: {
+      one_sentence_conclusion: "",
+      shape: "",
+      color: "",
+      texture: "",
+      visual_analysis: { shape: "", color: "", texture: "" },
+      combined_judgement: "",
+    },
+    possible_causes: [],
     interpretation: {
       overall_judgement: "需要结合更多信息判断",
       why_shape: ["图片角度与光线影响形态判断", "仅凭单张图片可能低估真实形态"],
@@ -385,6 +411,47 @@ function buildDefaultResult() {
     },
     model_used: "unknown",
     proxy_version: PROXY_VERSION,
+    explanation: "",
+  };
+}
+
+function buildNotStoolResult(guard) {
+  const base = buildDefaultResult();
+  return {
+    ...base,
+    ok: false,
+    is_stool_image: false,
+    error_code: "NOT_STOOL_IMAGE",
+    error: "NOT_STOOL_IMAGE",
+    headline: "这张图片未识别到大便，暂时无法分析",
+    risk_level: "unknown",
+    confidence: Number.isFinite(Number(guard?.confidence)) ? Number(guard.confidence) : 0,
+    explanation: guard?.reason || "未识别到大便图像。",
+    stool_features: null,
+    doctor_explanation: null,
+    ui_strings: {
+      ...base.ui_strings,
+      sections: [
+        {
+          title: "无法分析的原因",
+          icon_key: "camera",
+          items: [
+            "图片中未识别到大便",
+            "可能拍到了其他物体或场景",
+            "建议只拍大便本身",
+          ],
+        },
+        {
+          title: "请重新拍摄",
+          icon_key: "retry",
+          items: [
+            "光线充足，避免背光/强反光",
+            "对焦清晰，大便占画面 50% 以上",
+            "尽量减少背景干扰",
+          ],
+        },
+      ],
+    },
   };
 }
 
@@ -403,6 +470,8 @@ function normalizeResult(parsed) {
   const out = { ...base, ...(parsed || {}) };
 
   const stool = { ...base.stool_features, ...(out.stool_features || {}) };
+  const doctor = { ...base.doctor_explanation, ...(out.doctor_explanation || {}) };
+  const causes = Array.isArray(out.possible_causes) ? out.possible_causes : [];
   const interpretation = { ...base.interpretation, ...(out.interpretation || {}) };
   const actions = { ...base.actions_today, ...(out.actions_today || {}) };
   const ui = { ...base.ui_strings, ...(out.ui_strings || {}) };
@@ -410,6 +479,7 @@ function normalizeResult(parsed) {
 
   out.ok = out.ok === false ? false : true;
   out.schema_version = 2;
+  out.is_stool_image = out.is_stool_image === false ? false : true;
   out.model_used = typeof out.model_used === "string" && out.model_used.trim()
     ? out.model_used.trim()
     : base.model_used;
@@ -424,13 +494,23 @@ function normalizeResult(parsed) {
   out.risk_level = ["low", "medium", "high"].includes(out.risk_level)
     ? out.risk_level
     : base.risk_level;
+  if (out.is_stool_image === false) {
+    out.risk_level = "unknown";
+  }
   out.confidence = Number.isFinite(Number(out.confidence))
     ? Number(out.confidence)
     : base.confidence;
   out.uncertainty_note = typeof out.uncertainty_note === "string" ? out.uncertainty_note : "";
   out.headline = typeof out.headline === "string" ? out.headline : "";
+  out.explanation = typeof out.explanation === "string" ? out.explanation : "";
 
-  out.stool_features = {
+  out.stool_features = out.is_stool_image === false
+    ? null
+    : {
+    shape:
+      typeof stool.shape === "string" && stool.shape.trim()
+        ? stool.shape.trim()
+        : base.stool_features.shape,
     bristol_type:
       stool.bristol_type === null
         ? null
@@ -445,14 +525,29 @@ function normalizeResult(parsed) {
       typeof stool.shape_desc === "string" && stool.shape_desc.trim()
         ? stool.shape_desc.trim()
         : base.stool_features.shape_desc,
+    color:
+      typeof stool.color === "string" && stool.color.trim()
+        ? stool.color.trim()
+        : base.stool_features.color,
     color_desc:
       typeof stool.color_desc === "string" && stool.color_desc.trim()
         ? stool.color_desc.trim()
         : base.stool_features.color_desc,
+    color_reason:
+      typeof stool.color_reason === "string" && stool.color_reason.trim()
+        ? stool.color_reason.trim()
+        : base.stool_features.color_reason,
+    texture:
+      typeof stool.texture === "string" && stool.texture.trim()
+        ? stool.texture.trim()
+        : base.stool_features.texture,
     texture_desc:
       typeof stool.texture_desc === "string" && stool.texture_desc.trim()
         ? stool.texture_desc.trim()
         : base.stool_features.texture_desc,
+    abnormal_signs: Array.isArray(stool.abnormal_signs)
+      ? stool.abnormal_signs.map(String)
+      : [],
     volume: ["small", "medium", "large", "unknown"].includes(stool.volume)
       ? stool.volume
       : "unknown",
@@ -476,10 +571,86 @@ function normalizeResult(parsed) {
       : [],
   };
 
-  out.stool_features.visible_findings = ensureMinItems(
-    out.stool_features.visible_findings,
-    1,
-    ["none"]
+  if (out.stool_features) {
+    out.stool_features.visible_findings = ensureMinItems(
+      out.stool_features.visible_findings,
+      1,
+      ["none"]
+    );
+    out.stool_features.abnormal_signs = ensureMinItems(
+      out.stool_features.abnormal_signs,
+      1,
+      ["未见明显异常"]
+    );
+  }
+
+  out.doctor_explanation = out.is_stool_image === false
+    ? null
+    : {
+        one_sentence_conclusion:
+          typeof doctor.one_sentence_conclusion === "string" && doctor.one_sentence_conclusion.trim()
+            ? doctor.one_sentence_conclusion.trim()
+            : out.headline || base.doctor_explanation.one_sentence_conclusion,
+        shape:
+          typeof doctor.shape === "string" && doctor.shape.trim()
+            ? doctor.shape.trim()
+            : "",
+        color:
+          typeof doctor.color === "string" && doctor.color.trim()
+            ? doctor.color.trim()
+            : "",
+        texture:
+          typeof doctor.texture === "string" && doctor.texture.trim()
+            ? doctor.texture.trim()
+            : "",
+        visual_analysis: {
+          shape:
+            typeof doctor.visual_analysis?.shape === "string" && doctor.visual_analysis.shape.trim()
+              ? doctor.visual_analysis.shape.trim()
+              : "",
+          color:
+            typeof doctor.visual_analysis?.color === "string" && doctor.visual_analysis.color.trim()
+              ? doctor.visual_analysis.color.trim()
+              : "",
+          texture:
+            typeof doctor.visual_analysis?.texture === "string" && doctor.visual_analysis.texture.trim()
+              ? doctor.visual_analysis.texture.trim()
+              : "",
+        },
+        combined_judgement:
+          typeof doctor.combined_judgement === "string" && doctor.combined_judgement.trim()
+            ? doctor.combined_judgement.trim()
+            : interpretation.overall_judgement || base.interpretation.overall_judgement,
+      };
+
+  if (out.doctor_explanation) {
+    if (!out.doctor_explanation.shape && out.doctor_explanation.visual_analysis?.shape) {
+      out.doctor_explanation.shape = out.doctor_explanation.visual_analysis.shape;
+    }
+    if (!out.doctor_explanation.color && out.doctor_explanation.visual_analysis?.color) {
+      out.doctor_explanation.color = out.doctor_explanation.visual_analysis.color;
+    }
+    if (!out.doctor_explanation.texture && out.doctor_explanation.visual_analysis?.texture) {
+      out.doctor_explanation.texture = out.doctor_explanation.visual_analysis.texture;
+    }
+  }
+
+  out.possible_causes = ensureMinItems(
+    causes.map((item) => {
+      if (!item || typeof item !== "object") {
+        return { title: "饮食结构影响", explanation: "近期饮食变化会让便便更偏软。"};
+      }
+      return {
+        title: item.title ? String(item.title) : "常见原因",
+        explanation: item.explanation ? String(item.explanation) : "常见原因导致的短期变化。",
+      };
+    }),
+    3,
+    [
+      { title: "饮食结构影响", explanation: "水果或含水量高的食物增加会让便便偏软。" },
+      { title: "肠道蠕动偏快", explanation: "幼儿阶段肠道功能调试期，容易偏软。" },
+      { title: "轻微受凉或作息变化", explanation: "环境变化可短暂影响消化节律。" },
+    ]
   );
 
   out.interpretation = {
@@ -682,7 +853,9 @@ function normalizeResult(parsed) {
     conclusion: out.ui_strings.longform.conclusion || out.headline || "整体情况需要继续观察。",
     how_to_read:
       out.ui_strings.longform.how_to_read ||
-      `形态：${out.stool_features.shape_desc}；颜色：${out.stool_features.color_desc}；质地：${out.stool_features.texture_desc}。`,
+      out.stool_features
+        ? `形态：${out.stool_features.shape_desc}；颜色：${out.stool_features.color_desc}；质地：${out.stool_features.texture_desc}。`
+        : "图片无法识别为大便，建议重新拍摄。",
     context:
       out.ui_strings.longform.context ||
       out.interpretation.how_context_affects.join("；"),
@@ -698,6 +871,12 @@ function normalizeResult(parsed) {
       out.ui_strings.longform.reassure ||
       "若精神和食欲良好、尿量正常，通常可先在家观察并记录变化。",
   };
+
+  out.bristol_type = out.stool_features?.bristol_type ?? null;
+  out.color = out.stool_features?.color_desc ?? null;
+  out.texture = out.stool_features?.texture_desc ?? null;
+  out.hydration_hint = out.actions_today.hydration[0] || "";
+  out.diet_advice = out.actions_today.diet.slice(0, 5);
 
   return out;
 }
@@ -765,6 +944,24 @@ app.post("/analyze", async (req, res) => {
       max_output_tokens: 1000
     };
 
+    const guardResult = await isStoolImageGuard({
+      apiKey,
+      model,
+      imageDataUrl,
+      callOpenAIWithRetry,
+      extractOutputText,
+    });
+    console.log(
+      `[GUARD] is_stool=${guardResult.is_stool} confidence=${guardResult.confidence} reason=${guardResult.reason}`
+    );
+    if (!guardResult.is_stool) {
+      const notStool = normalizeResult(buildNotStoolResult(guardResult));
+      notStool.model_used = guardResult.model_used || model;
+      res.setHeader("x-openai-model", notStool.model_used || "unknown");
+      res.setHeader("schema_version", "2");
+      return res.status(200).json(notStool);
+    }
+
     console.log(`[OPENAI] request model=${model} text.format=json_schema`);
     const initialResponse = await callOpenAIWithRetry(apiKey, payload, model);
     const { r, raw } = initialResponse;
@@ -824,8 +1021,8 @@ app.post("/analyze", async (req, res) => {
 
     const normalized = normalizeResult(parsed);
     normalized.model_used = usedModel;
-    if (req.body?.context_input && !normalized.context_input) {
-      normalized.context_input = req.body.context_input;
+    if ((req.body?.context || req.body?.context_input) && !normalized.context_input) {
+      normalized.context_input = req.body.context || req.body.context_input;
     }
     res.setHeader("schema_version", String(normalized.schema_version || 2));
     return res.json(normalized);

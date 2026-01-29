@@ -36,7 +36,7 @@ class RemoteAnalyzer implements Analyzer {
         'odor': inputs.odor,
         'pain_or_strain': inputs.painOrStrain,
         'diet_keywords': inputs.dietKeywords,
-        if (inputs.contextInput != null) 'context_input': inputs.contextInput,
+        if (inputs.contextInput != null) 'context': inputs.contextInput,
         'lang': LocaleHelper.currentLanguageCode(),
       });
       final structured = StoolAnalysisResult.parse(response);
@@ -71,8 +71,8 @@ class RemoteAnalyzer implements Analyzer {
       riskLevel: _riskLevel(data.riskLevel),
       summary: data.summary,
       bristolType: data.stoolFeatures.bristolType,
-      color: _colorTag(data.stoolFeatures.color),
-      texture: _textureTag(data.stoolFeatures.texture),
+      color: _colorTag(data.stoolFeatures.colorLabel),
+      texture: _textureTag(data.stoolFeatures.textureLabel),
       suspiciousSignals: redFlags,
       qualityScore: data.score,
       qualityIssues: data.reasoningBullets,

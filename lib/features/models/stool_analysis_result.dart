@@ -14,12 +14,16 @@ class StoolAnalysisResult {
   final bool ok;
   final String errorCode;
   final String modelUsed;
+  final bool isStoolImage;
+  final String explanation;
   final String headline;
   final int score;
   final String riskLevel;
   final double confidence;
   final String uncertaintyNote;
   final StoolFeatures stoolFeatures;
+  final DoctorExplanation doctorExplanation;
+  final List<PossibleCause> possibleCauses;
   final Interpretation interpretation;
   final List<String> reasoningBullets;
   final ActionsToday actionsToday;
@@ -38,12 +42,16 @@ class StoolAnalysisResult {
     required this.ok,
     required this.errorCode,
     required this.modelUsed,
+    required this.isStoolImage,
+    required this.explanation,
     required this.headline,
     required this.score,
     required this.riskLevel,
     required this.confidence,
     required this.uncertaintyNote,
     required this.stoolFeatures,
+    required this.doctorExplanation,
+    required this.possibleCauses,
     required this.interpretation,
     required this.reasoningBullets,
     required this.actionsToday,
@@ -134,10 +142,31 @@ class StoolAnalysisResult {
     final riskLevel = _string('risk_level', fallback: 'low');
     final confidence = _double('confidence');
     final uncertaintyNote = _string('uncertainty_note');
+    final isStoolImage = json['is_stool_image'] != false;
+    final explanation = json['explanation']?.toString() ?? '';
 
-    final stoolFeatures = StoolFeatures.parse(
-      _map('stool_features'),
-      missing,
+    StoolFeatures stoolFeatures;
+    final stoolRaw = json['stool_features'];
+    if (stoolRaw == null) {
+      stoolFeatures = StoolFeatures.empty();
+    } else {
+      stoolFeatures = StoolFeatures.parse(
+        _map('stool_features'),
+        missing,
+      );
+    }
+    DoctorExplanation doctorExplanation;
+    final doctorRaw = json['doctor_explanation'];
+    if (doctorRaw == null) {
+      doctorExplanation = const DoctorExplanation.empty();
+    } else {
+      doctorExplanation = DoctorExplanation.parse(
+        _map('doctor_explanation'),
+        missing,
+      );
+    }
+    final possibleCauses = PossibleCause.parseList(
+      _listOfMaps(json, 'possible_causes', missing),
     );
     final interpretation = Interpretation.parse(
       _map('interpretation'),
@@ -173,12 +202,16 @@ class StoolAnalysisResult {
         ok: ok,
         errorCode: errorCode,
         modelUsed: modelUsed,
+        isStoolImage: isStoolImage,
+        explanation: explanation,
         headline: headline.isEmpty ? summary : headline,
         score: score,
         riskLevel: riskLevel,
         confidence: confidence,
         uncertaintyNote: uncertaintyNote,
         stoolFeatures: stoolFeatures,
+        doctorExplanation: doctorExplanation,
+        possibleCauses: possibleCauses,
         interpretation: interpretation,
         reasoningBullets: reasoningBullets,
         actionsToday: actionsToday,
@@ -201,6 +234,11 @@ class StoolFeatures {
   final int? bristolType;
   final String? color;
   final String? texture;
+  final String shape;
+  final String colorLabel;
+  final String colorReason;
+  final String textureLabel;
+  final List<String> abnormalSigns;
   final String bristolRange;
   final String shapeDesc;
   final String colorDesc;
@@ -219,6 +257,11 @@ class StoolFeatures {
     required this.bristolType,
     required this.color,
     required this.texture,
+    required this.shape,
+    required this.colorLabel,
+    required this.colorReason,
+    required this.textureLabel,
+    required this.abnormalSigns,
     required this.bristolRange,
     required this.shapeDesc,
     required this.colorDesc,
@@ -234,6 +277,29 @@ class StoolFeatures {
     required this.visibleFindings,
   });
 
+  const StoolFeatures.empty()
+      : bristolType = null,
+        color = null,
+        texture = null,
+        shape = '',
+        colorLabel = '',
+        colorReason = '',
+        textureLabel = '',
+        abnormalSigns = const [],
+        bristolRange = '',
+        shapeDesc = '',
+        colorDesc = '',
+        textureDesc = '',
+        volume = 'unknown',
+        wateriness = 'none',
+        mucus = 'none',
+        foam = 'none',
+        blood = 'none',
+        undigestedFood = 'none',
+        separationLayers = 'none',
+        odorLevel = 'unknown',
+        visibleFindings = const [];
+
   static StoolFeatures parse(Map<String, dynamic> json, List<String> missing) {
     int? bristolType;
     final raw = json['bristol_type'];
@@ -242,6 +308,20 @@ class StoolFeatures {
     } else {
       missing.add('stool_features.bristol_type');
     }
+
+    final shape = json['shape']?.toString() ?? '';
+    if (shape.isEmpty) missing.add('stool_features.shape');
+    final colorLabel = json['color']?.toString() ?? '';
+    if (colorLabel.isEmpty) missing.add('stool_features.color');
+    final textureLabel = json['texture']?.toString() ?? '';
+    if (textureLabel.isEmpty) missing.add('stool_features.texture');
+    final colorReason = json['color_reason']?.toString() ?? '';
+    if (colorReason.isEmpty) missing.add('stool_features.color_reason');
+    final abnormalSignsRaw = json['abnormal_signs'];
+    final abnormalSigns = abnormalSignsRaw is List
+        ? abnormalSignsRaw.map((e) => e.toString()).toList()
+        : const <String>[];
+    if (abnormalSigns.isEmpty) missing.add('stool_features.abnormal_signs');
 
     final colorDesc = json['color_desc']?.toString() ?? json['color']?.toString();
     if (colorDesc == null || colorDesc.isEmpty) {
@@ -279,6 +359,11 @@ class StoolFeatures {
       bristolType: bristolType,
       color: colorDesc,
       texture: textureDesc,
+      shape: shape,
+      colorLabel: colorLabel,
+      colorReason: colorReason,
+      textureLabel: textureLabel,
+      abnormalSigns: abnormalSigns,
       bristolRange: bristolRange,
       shapeDesc: shapeDesc,
       colorDesc: colorDesc ?? '',
@@ -331,6 +416,69 @@ class Interpretation {
       howContextAffects: howContext,
       confidenceExplain: confidenceExplain,
     );
+  }
+}
+
+class DoctorExplanation {
+  final String oneSentenceConclusion;
+  final String shapeAnalysis;
+  final String colorAnalysis;
+  final String textureAnalysis;
+  final String combinedJudgement;
+
+  const DoctorExplanation({
+    required this.oneSentenceConclusion,
+    required this.shapeAnalysis,
+    required this.colorAnalysis,
+    required this.textureAnalysis,
+    required this.combinedJudgement,
+  });
+
+  const DoctorExplanation.empty()
+      : oneSentenceConclusion = '',
+        shapeAnalysis = '',
+        colorAnalysis = '',
+        textureAnalysis = '',
+        combinedJudgement = '';
+
+  static DoctorExplanation parse(Map<String, dynamic> json, List<String> missing) {
+    final conclusion = json['one_sentence_conclusion']?.toString() ?? '';
+    if (conclusion.isEmpty) missing.add('doctor_explanation.one_sentence_conclusion');
+    final visual = json['visual_analysis'];
+    final visualMap = visual is Map
+        ? visual.map((k, v) => MapEntry(k.toString(), v))
+        : const <String, dynamic>{};
+    final shape = json['shape']?.toString() ?? visualMap['shape']?.toString() ?? '';
+    final color = json['color']?.toString() ?? visualMap['color']?.toString() ?? '';
+    final texture = json['texture']?.toString() ?? visualMap['texture']?.toString() ?? '';
+    if (shape.isEmpty) missing.add('doctor_explanation.visual_analysis.shape');
+    if (color.isEmpty) missing.add('doctor_explanation.visual_analysis.color');
+    if (texture.isEmpty) missing.add('doctor_explanation.visual_analysis.texture');
+    final combined = json['combined_judgement']?.toString() ?? '';
+    if (combined.isEmpty) missing.add('doctor_explanation.combined_judgement');
+    return DoctorExplanation(
+      oneSentenceConclusion: conclusion,
+      shapeAnalysis: shape,
+      colorAnalysis: color,
+      textureAnalysis: texture,
+      combinedJudgement: combined,
+    );
+  }
+}
+
+class PossibleCause {
+  final String title;
+  final String explanation;
+
+  const PossibleCause({required this.title, required this.explanation});
+
+  static List<PossibleCause> parseList(List<Map<String, dynamic>> list) {
+    return list
+        .map((item) => PossibleCause(
+              title: item['title']?.toString() ?? '',
+              explanation: item['explanation']?.toString() ?? '',
+            ))
+        .toList();
   }
 }
 

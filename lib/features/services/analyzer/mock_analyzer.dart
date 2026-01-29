@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../models/user_inputs.dart';
 import '../../services/mock_generator.dart';
+import '../../models/stool_analysis_result.dart';
 import 'analyzer.dart';
 
 class MockAnalyzer implements Analyzer {
@@ -12,6 +13,9 @@ class MockAnalyzer implements Analyzer {
   }) async {
     final analysis = MockGenerator.randomAnalysis();
     final advice = MockGenerator.adviceFor(analysis, inputs);
-    return AnalyzeResult(analysis: analysis, advice: advice);
+    final structured = StoolAnalysisResult.parse(
+      MockGenerator.mockStructuredV2(),
+    );
+    return AnalyzeResult(analysis: analysis, advice: advice, structured: structured);
   }
 }

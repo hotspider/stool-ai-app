@@ -48,8 +48,10 @@ class ImageSourceService {
     }
     final original = File(picked.path);
     final cropped = await ImageCropService.crop(original);
-    final file = cropped ?? original;
-    return file.readAsBytes();
+    if (cropped == null) {
+      return null;
+    }
+    return cropped.readAsBytes();
   }
 
   Future<Uint8List?> pickFromGallery() async {
@@ -68,8 +70,10 @@ class ImageSourceService {
     }
     final original = File(picked.path);
     final cropped = await ImageCropService.crop(original);
-    final file = cropped ?? original;
-    return file.readAsBytes();
+    if (cropped == null) {
+      return null;
+    }
+    return cropped.readAsBytes();
   }
 
   Future<PermissionStatus> _requestGalleryPermission() async {

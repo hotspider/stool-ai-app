@@ -12,7 +12,6 @@ import '../services/analyzer/analyzer.dart';
 import '../services/analyzer/analyzer_factory.dart';
 import '../../design/tokens.dart';
 import '../../design/widgets/app_scaffold.dart';
-import '../../design/widgets/animated_entry.dart';
 import '../../design/components/info_banner.dart';
 import '../../design/components/section_header.dart';
 import '../../design/components/soft_card.dart';
@@ -34,6 +33,8 @@ class ResultPage extends StatefulWidget {
   final String? validationWarning;
   final AdviceResponse? initialAdvice;
   final StoolAnalysisParseResult? initialStructured;
+  final Map<String, dynamic>? initialContext;
+  final String? contextSummary;
 
   const ResultPage({
     super.key,
@@ -41,6 +42,8 @@ class ResultPage extends StatefulWidget {
     this.validationWarning,
     this.initialAdvice,
     this.initialStructured,
+    this.initialContext,
+    this.contextSummary,
   });
 
   @override
@@ -412,104 +415,155 @@ class _ResultPageState extends State<ResultPage> {
                   style: AppText.body,
                 ),
               ),
-            ] else ...[
-              AnimatedEntry(
-                child: _SummaryCard(
-                  riskLevel: _riskLevelFromString(structured.riskLevel),
-                  riskLabel: _riskLabel(
-                      l10n, _riskLevelFromString(structured.riskLevel)),
-                  riskDescription: _riskDescription(structured.riskLevel),
-                  riskColor: _riskColor(structured.riskLevel),
-                  headline: structured.headline.isEmpty
-                      ? l10n.resultInsufficientMessage
-                      : structured.headline,
-                  summary: structured.uiStrings.summary.isEmpty
-                      ? structured.summary
-                      : structured.uiStrings.summary,
-                  confidence: structured.confidence,
-                  uncertaintyNote: structured.uncertaintyNote,
-                  warning: widget.validationWarning,
-                  modelUsed: structured.modelUsed,
+            ] else if (structured.errorCode == 'NOT_STOOL_IMAGE' ||
+                structured.isStoolImage == false) ...[
+              SoftCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('这张图片未识别到大便，暂时无法分析', style: AppText.section),
+                    const SizedBox(height: AppSpace.s8),
+                    Text(
+                      '为了避免误判，我们只在确认是“大便图片”后才会进入健康分析。',
+                      style: AppText.body,
+                    ),
+                    const SizedBox(height: AppSpace.s12),
+                    Text(
+                      structured.explanation.isNotEmpty
+                          ? structured.explanation
+                          : '可能拍到了：纸巾/地面/尿布内其他区域/食物/玩具/皮肤等。',
+                      style: AppText.body,
+                    ),
+                    const SizedBox(height: AppSpace.s12),
+                    _ActionSection(
+                      title: '重拍要点（3 条）',
+                      iconKey: 'camera',
+                      items: const [
+                        '光线充足，避免背光/强反光',
+                        '对焦清晰，大便占画面 50% 以上',
+                        '只拍大便本身，尽量不要包含过多背景',
+                      ],
+                    ),
+                    const SizedBox(height: AppSpace.s12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: PrimaryButton(
+                            label: '重新拍摄',
+                            onPressed: () {
+                              if (context.canPop()) {
+                                context.pop();
+                              } else {
+                                context.go('/home');
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpace.s12),
+                        Expanded(
+                          child: SecondaryButton(
+                            label: '从相册选择',
+                            onPressed: () => context.go('/home'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpace.s8),
+                    TextButton(
+                      onPressed: () {
+                        showDialog<void>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('如何拍才准确？'),
+                            content: const Text(
+                              '请确保光线充足、对焦清晰，大便占画面 50% 以上，尽量减少背景干扰。',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('知道了'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      child: const Text('如何拍才准确？'),
+                    ),
+                    const SizedBox(height: AppSpace.s8),
+                    Text(
+                      '本工具用于健康记录与辅助观察，不替代医生诊断。',
+                      style: AppText.caption,
+                    ),
+                  ],
                 ),
               ),
+            ] else if (!structured.ok) ...[
+              SoftCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('信息不足，建议补充后再判断', style: AppText.section),
+                    const SizedBox(height: AppSpace.s8),
+                    Text(
+                      structured.uncertaintyNote.isNotEmpty
+                          ? structured.uncertaintyNote
+                          : '图片角度或光线可能影响判断，请补充信息或重新拍摄。',
+                      style: AppText.body,
+                    ),
+                    const SizedBox(height: AppSpace.s12),
+                    _ActionSection(
+                      title: '为什么不足',
+                      iconKey: 'info',
+                      items: structured.uiStrings.sections
+                          .expand((section) => section.items)
+                          .toList(),
+                    ),
+                    const SizedBox(height: AppSpace.s12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: PrimaryButton(
+                            label: '返回补充信息',
+                            onPressed: () {
+                              if (context.canPop()) {
+                                context.pop();
+                              } else {
+                                context.go('/home');
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpace.s12),
+                        Expanded(
+                          child: SecondaryButton(
+                            label: '重新选择图片',
+                            onPressed: () => context.go('/home'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpace.s12),
+                    ExpansionTile(
+                      title: const Text('红旗预警（可展开）'),
+                      childrenPadding: const EdgeInsets.only(bottom: AppSpace.s8),
+                      children: [
+                        _BulletList(
+                          items: structured.redFlags
+                              .map((item) => '${item.title} ${item.detail}'.trim())
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
               ..._buildNarrativeBlocks(
                 context,
                 structured,
                 l10n,
                 useLegacyActions,
                 legacyActions,
-              ),
-              const SizedBox(height: AppSpace.s16),
-              SectionHeader(title: l10n.resultExtraTitle),
-              const SizedBox(height: AppSpace.s12),
-              SoftCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value: _odor,
-                      decoration:
-                          InputDecoration(labelText: l10n.resultOdorLabel),
-                      items: _odorOptions
-                          .map(
-                            (value) => DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(_odorLabel(value)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setState(() {
-                          _odor = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: AppSpace.s12),
-                    SwitchListTile(
-                      value: _painOrStrain,
-                      onChanged: (value) {
-                        setState(() {
-                          _painOrStrain = value;
-                        });
-                      },
-                      title: Text(l10n.resultPainLabel),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: AppSpace.s12),
-                    TextField(
-                      controller: _dietController,
-                      decoration: InputDecoration(
-                        labelText: l10n.resultDietLabel,
-                        hintText: l10n.resultDietHint,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpace.s12),
-                    OutlinedButton(
-                      onPressed: _isUpdatingAdvice ? null : _submitInputs,
-                      child: Text(l10n.resultSubmitUpdate),
-                    ),
-                    if (_adviceUpdated)
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpace.s8),
-                        child: Text(
-                          l10n.resultAdviceUpdated,
-                          style: AppText.caption.copyWith(
-                            color: AppColors.riskLow,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpace.s12),
-              Text(
-                structured.uncertaintyNote.isEmpty
-                    ? l10n.resultDisclaimersDefault
-                    : structured.uncertaintyNote,
-                style: AppText.caption,
               ),
             ],
           ],
@@ -662,7 +716,7 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
 
-    final colorTag = (structured.stoolFeatures.color ?? '').toLowerCase();
+    final colorTag = (structured.stoolFeatures.colorLabel).toLowerCase();
     if (colorTag == 'black' || colorTag == 'red' || colorTag == 'white_gray') {
       score -= 35;
     } else if (colorTag == 'green') {
@@ -694,19 +748,24 @@ class _ResultPageState extends State<ResultPage> {
     List<String> legacyActions,
   ) {
     final longform = structured.uiStrings.longform;
-    final conclusion =
-        longform.conclusion.isNotEmpty ? longform.conclusion : structured.headline;
-    final howToRead = longform.howToRead.isNotEmpty
-        ? longform.howToRead
-        : _buildHowToRead(structured);
-    final contextText = longform.context.isNotEmpty
-        ? longform.context
+    final conclusion = _safeText(
+      structured.doctorExplanation.oneSentenceConclusion,
+      fallback: _safeText(structured.headline, fallback: '整体情况更偏向可观察。'),
+    );
+    final combined = _safeText(
+      structured.doctorExplanation.combinedJudgement,
+      fallback: _safeText(structured.interpretation.overallJudgement, fallback: ''),
+    );
+    final contextBullets = widget.contextSummary != null &&
+            widget.contextSummary!.trim().isNotEmpty
+        ? [widget.contextSummary!.trim()]
         : structured.interpretation.howContextAffects.isNotEmpty
-            ? structured.interpretation.howContextAffects.join('；')
-            : '未提供补充信息，建议补充近期饮食与症状。';
-    final reassure = longform.reassure.isNotEmpty
-        ? longform.reassure
-        : '若精神和食欲良好、尿量正常，通常可先在家观察并记录变化。';
+            ? structured.interpretation.howContextAffects
+            : const ['未提供补充信息，建议补充近期饮食与症状。'];
+    final reassure = _safeText(
+      longform.reassure,
+      fallback: '如果精神好、吃得下、睡得稳、次数不多，大多属于可观察型。',
+    );
     final showGuidance = !structured.ok || structured.confidence < 0.45;
 
     final canDo = [
@@ -776,65 +835,86 @@ class _ResultPageState extends State<ResultPage> {
       );
     }
 
+    final abnormalSigns = structured.stoolFeatures.abnormalSigns;
+    final hasExplicitAbnormal = abnormalSigns.any(
+      (item) => item.contains('血') || item.contains('黏') || item.contains('泡') || item.contains('分层'),
+    );
+    final abnormalLine = hasExplicitAbnormal
+        ? '可见：${abnormalSigns.join('、')}'
+        : '未看到：血丝 / 黏液 / 水样分层';
+
     widgets.addAll([
       const SizedBox(height: AppSpace.s12),
-      SectionHeader(title: '一句话结论'),
-      const SizedBox(height: AppSpace.s8),
-      SoftCard(child: Text(conclusion, style: AppText.body)),
-      const SizedBox(height: AppSpace.s16),
-      SectionHeader(title: '具体怎么看'),
-      const SizedBox(height: AppSpace.s8),
       SoftCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(howToRead, style: AppText.body),
-            const SizedBox(height: AppSpace.s12),
-            Wrap(
-              spacing: AppSpace.s8,
-              runSpacing: AppSpace.s8,
-              children: [
-                _MetricChip(
-                  label: l10n.resultMetricBristol,
-                  value: structured.stoolFeatures.bristolType == null
-                      ? l10n.resultInsufficientMessage
-                      : l10n.resultBristolValue(
-                          structured.stoolFeatures.bristolType!),
-                ),
-                _MetricChip(
-                  label: l10n.resultMetricColor,
-                  value: _featureLabelOrUnknown(
-                    l10n,
-                    structured.stoolFeatures.color,
-                  ),
-                ),
-                _MetricChip(
-                  label: l10n.resultMetricTexture,
-                  value: _featureLabelOrUnknown(
-                    l10n,
-                    structured.stoolFeatures.texture,
-                  ),
-                ),
-                _MetricChip(
-                  label: l10n.resultMetricScore,
-                  value: '${_resolveScore(structured)}/100',
-                ),
-                ...structured.uiStrings.tags.map(
-                  (chip) => Chip(label: Text(chip, style: AppText.caption)),
-                ),
-              ],
+            Text(
+              conclusion,
+              style: AppText.title.copyWith(fontSize: 22, height: 1.35),
             ),
+            if (combined.isNotEmpty) ...[
+              const SizedBox(height: AppSpace.s8),
+              Text(combined, style: AppText.body),
+            ],
+            const SizedBox(height: AppSpace.s12),
+            Text('你提到：', style: AppText.section),
+            const SizedBox(height: AppSpace.s8),
+            _BulletList(items: contextBullets),
           ],
         ),
       ),
       const SizedBox(height: AppSpace.s16),
-      SectionHeader(title: '结合你填写的情况'),
+      SectionHeader(title: '具体怎么看这个便便'),
       const SizedBox(height: AppSpace.s8),
-      SoftCard(child: Text(contextText, style: AppText.body)),
+      _FeatureCard(
+        title: '形态',
+        icon: Icons.bakery_dining_outlined,
+        lines: [
+          '形态：${_safeText(structured.stoolFeatures.shape, fallback: "偏软/糊状")}',
+          '像：${_safeText(structured.stoolFeatures.shapeDesc, fallback: "稠粥/土豆泥")}',
+          '布里斯托：${_safeText(structured.stoolFeatures.bristolRange, fallback: "5-6")}',
+        ],
+        footer: _safeText(structured.doctorExplanation.shapeAnalysis, fallback: "—"),
+      ),
+      const SizedBox(height: AppSpace.s12),
+      _FeatureCard(
+        title: '颜色',
+        icon: Icons.palette_outlined,
+        lines: [
+          '颜色：${_safeText(structured.stoolFeatures.colorLabel, fallback: "黄褐偏黄")}',
+          _safeText(structured.stoolFeatures.colorReason, fallback: '多与饮食和肠道通过速度有关'),
+        ],
+        footer: _safeText(structured.doctorExplanation.colorAnalysis, fallback: "—"),
+      ),
+      const SizedBox(height: AppSpace.s12),
+      _FeatureCard(
+        title: '质地',
+        icon: Icons.grain_outlined,
+        lines: [
+          '质地：${_safeText(structured.stoolFeatures.textureLabel, fallback: "细腻/糊状")}',
+          abnormalLine,
+        ],
+        footer: _safeText(structured.doctorExplanation.textureAnalysis, fallback: "—"),
+      ),
       const SizedBox(height: AppSpace.s16),
-      SectionHeader(title: '可能原因'),
+      SectionHeader(title: '可能的原因（按概率）'),
       const SizedBox(height: AppSpace.s8),
-      SoftCard(child: _BulletList(items: structured.reasoningBullets)),
+      SoftCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: structured.possibleCauses.asMap().entries.map((entry) {
+            final idx = entry.key + 1;
+            final item = entry.value;
+            final title = _safeText(item.title, fallback: '常见原因');
+            final explanation = _safeText(item.explanation, fallback: '常见原因导致的短期变化。');
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpace.s12),
+              child: Text('$idx. $title：$explanation', style: AppText.body),
+            );
+          }).toList(),
+        ),
+      ),
       const SizedBox(height: AppSpace.s16),
       SectionHeader(title: '现在需要做什么'),
       const SizedBox(height: AppSpace.s8),
@@ -860,28 +940,28 @@ class _ResultPageState extends State<ResultPage> {
                     items: structured.actionsToday.avoid,
                   ),
                   const SizedBox(height: AppSpace.s12),
-                  _ActionSection(
-                    title: '👀 观察指标',
-                    iconKey: 'observe',
-                    items: structured.actionsToday.observe,
-                  ),
+                  Text('家长安心指标：$reassure', style: AppText.body),
                 ],
               ),
       ),
       const SizedBox(height: AppSpace.s16),
-      SectionHeader(title: '警戒信号'),
+      SectionHeader(title: '什么时候需要警惕'),
       const SizedBox(height: AppSpace.s8),
-      _WarningCard(
-        title: l10n.resultRedFlagsTitle,
-        items: structured.redFlags
-            .map((item) => '${item.title} ${item.detail}'.trim())
-            .toList(),
-        hint: l10n.resultWarningHint,
+      SoftCard(
+        child: ExpansionTile(
+          title: const Text('红旗预警（可展开）'),
+          childrenPadding: const EdgeInsets.only(bottom: AppSpace.s8),
+          children: [
+            _WarningCard(
+              title: '需要警惕的情况',
+              items: structured.redFlags
+                  .map((item) => '${item.title} ${item.detail}'.trim())
+                  .toList(),
+              hint: '如出现以上情况，请及时咨询医生。',
+            ),
+          ],
+        ),
       ),
-      const SizedBox(height: AppSpace.s16),
-      SectionHeader(title: '家长安心指标'),
-      const SizedBox(height: AppSpace.s8),
-      SoftCard(child: Text(reassure, style: AppText.body)),
     ]);
 
     return widgets;
@@ -899,6 +979,14 @@ class _ResultPageState extends State<ResultPage> {
       '颜色：$color${colorWhy.isNotEmpty ? "（$colorWhy）" : ""}',
       '质地：$texture${textureWhy.isNotEmpty ? "（$textureWhy）" : ""}',
     ].join('\n');
+  }
+
+  String _safeText(String? raw, {required String fallback}) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) return fallback;
+    if (value.toLowerCase().contains('unknown')) return fallback;
+    if (value.contains('信息不足')) return fallback;
+    return value;
   }
 
   String _featureLabelOrUnknown(AppLocalizations l10n, String? value) {
@@ -1010,6 +1098,47 @@ class _MetricChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Chip(
       label: Text('$label · $value', style: AppText.caption),
+    );
+  }
+}
+
+class _FeatureCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<String> lines;
+  final String footer;
+
+  const _FeatureCard({
+    required this.title,
+    required this.icon,
+    required this.lines,
+    required this.footer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: AppColors.primary),
+              const SizedBox(width: AppSpace.s6),
+              Text(title, style: AppText.section),
+            ],
+          ),
+          const SizedBox(height: AppSpace.s8),
+          ...lines.map((line) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpace.s6),
+                child: Text(line, style: AppText.body),
+              )),
+          if (footer.trim().isNotEmpty) ...[
+            const SizedBox(height: AppSpace.s6),
+            Text('👉 $footer', style: AppText.body),
+          ],
+        ],
+      ),
     );
   }
 }

@@ -7,11 +7,15 @@ class ResultPayload {
   final AdviceResponse? advice;
   final StoolAnalysisParseResult? structured;
   final String? validationWarning;
+  final Map<String, dynamic>? contextInput;
+  final String? contextSummary;
 
   const ResultPayload({
     required this.analysis,
     this.advice,
     this.structured,
     this.validationWarning,
+    this.contextInput,
+    this.contextSummary,
   });
 }

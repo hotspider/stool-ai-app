@@ -7,7 +7,7 @@ class ImageCropService {
 
   static Future<File?> crop(File input) async {
     if (_isCropping) {
-      return input;
+      return null;
     }
     _isCropping = true;
     try {
@@ -17,23 +17,23 @@ class ImageCropService {
         compressQuality: 92,
         uiSettings: [
           AndroidUiSettings(
-            toolbarTitle: '裁剪',
+            toolbarTitle: '请让便便占画面 ≥50%',
             lockAspectRatio: false,
             hideBottomControls: false,
             initAspectRatio: CropAspectRatioPreset.original,
           ),
           IOSUiSettings(
-            title: '裁剪',
+            title: '请让便便占画面 ≥50%',
             aspectRatioLockEnabled: false,
           ),
         ],
       );
       if (result == null) {
-        return input;
+        return null;
       }
       return File(result.path);
     } catch (_) {
-      return input;
+      return null;
     } finally {
       _isCropping = false;
     }

@@ -6,12 +6,15 @@ export const V2_SCHEMA_JSON = {
   "required": [
     "ok",
     "schema_version",
+    "is_stool_image",
     "headline",
     "score",
     "risk_level",
     "confidence",
     "uncertainty_note",
     "stool_features",
+    "doctor_explanation",
+    "possible_causes",
     "interpretation",
     "reasoning_bullets",
     "actions_today",
@@ -24,20 +27,26 @@ export const V2_SCHEMA_JSON = {
   "properties": {
     "ok": { "type": "boolean" },
     "schema_version": { "type": "integer", "enum": [2] },
+    "is_stool_image": { "type": "boolean" },
     "headline": { "type": "string", "minLength": 1 },
     "score": { "type": "integer", "minimum": 0, "maximum": 100 },
     "risk_level": { "type": "string", "enum": ["low", "medium", "high", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "uncertainty_note": { "type": "string" },
     "stool_features": {
-      "type": "object",
+      "type": ["object", "null"],
       "additionalProperties": false,
       "required": [
+        "shape",
         "bristol_type",
         "bristol_range",
         "shape_desc",
+        "color",
         "color_desc",
+        "color_reason",
+        "texture",
         "texture_desc",
+        "abnormal_signs",
         "volume",
         "wateriness",
         "mucus",
@@ -49,11 +58,20 @@ export const V2_SCHEMA_JSON = {
         "visible_findings"
       ],
       "properties": {
+        "shape": { "type": "string", "minLength": 1 },
         "bristol_type": { "type": ["integer", "null"], "minimum": 1, "maximum": 7 },
         "bristol_range": { "type": "string", "minLength": 1 },
         "shape_desc": { "type": "string", "minLength": 1 },
+        "color": { "type": "string", "minLength": 1 },
         "color_desc": { "type": "string", "minLength": 1 },
+        "color_reason": { "type": "string", "minLength": 1 },
+        "texture": { "type": "string", "minLength": 1 },
         "texture_desc": { "type": "string", "minLength": 1 },
+        "abnormal_signs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
         "volume": { "type": "string", "enum": ["small", "medium", "large", "unknown"] },
         "wateriness": { "type": "string", "enum": ["none", "mild", "moderate", "severe"] },
         "mucus": { "type": "string", "enum": ["none", "suspected", "present"] },
@@ -87,6 +105,48 @@ export const V2_SCHEMA_JSON = {
         "why_texture": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 2 },
         "how_context_affects": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 3 },
         "confidence_explain": { "type": "string", "minLength": 1 }
+      }
+    },
+    "doctor_explanation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "one_sentence_conclusion",
+        "shape",
+        "color",
+        "texture",
+        "combined_judgement",
+        "visual_analysis"
+      ],
+      "properties": {
+        "one_sentence_conclusion": { "type": "string", "minLength": 1 },
+        "shape": { "type": "string", "minLength": 1 },
+        "color": { "type": "string", "minLength": 1 },
+        "texture": { "type": "string", "minLength": 1 },
+        "visual_analysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["shape", "color", "texture"],
+          "properties": {
+            "shape": { "type": "string", "minLength": 1 },
+            "color": { "type": "string", "minLength": 1 },
+            "texture": { "type": "string", "minLength": 1 }
+          }
+        },
+        "combined_judgement": { "type": "string", "minLength": 1 }
+      }
+    },
+    "possible_causes": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "explanation"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "explanation": { "type": "string", "minLength": 1 }
+        }
       }
     },
     "reasoning_bullets": {
@@ -176,6 +236,7 @@ export const V2_SCHEMA_JSON = {
     "proxy_version": { "type": "string", "minLength": 1 },
     "worker_version": { "type": "string" },
     "context_input": { "type": "object" },
+    "explanation": { "type": "string" },
     "error_code": { "type": "string" },
     "error": { "type": "string" },
     "message": { "type": "string" },

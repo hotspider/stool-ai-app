@@ -72,6 +72,8 @@ class AppRouter {
               initialAdvice: payload.advice,
               initialStructured: payload.structured,
               validationWarning: payload.validationWarning,
+              initialContext: payload.contextInput,
+              contextSummary: payload.contextSummary,
             );
           }
           final analysis = state.extra is AnalyzeResponse
