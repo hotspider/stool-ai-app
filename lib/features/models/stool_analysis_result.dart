@@ -12,6 +12,8 @@ class StoolAnalysisParseResult {
 
 class StoolAnalysisResult {
   final bool ok;
+  final String errorCode;
+  final String modelUsed;
   final String headline;
   final int score;
   final String riskLevel;
@@ -33,6 +35,8 @@ class StoolAnalysisResult {
 
   const StoolAnalysisResult({
     required this.ok,
+    required this.errorCode,
+    required this.modelUsed,
     required this.headline,
     required this.score,
     required this.riskLevel,
@@ -121,6 +125,8 @@ class StoolAnalysisResult {
     }
 
     final ok = json['ok'] == true;
+    final errorCode = json['error_code']?.toString() ?? '';
+    final modelUsed = json['model_used']?.toString() ?? '';
     final headline = _string('headline');
     final score = _int('score');
     final riskLevel = _string('risk_level', fallback: 'low');
@@ -159,6 +165,8 @@ class StoolAnalysisResult {
     return StoolAnalysisParseResult(
       result: StoolAnalysisResult(
         ok: ok,
+        errorCode: errorCode,
+        modelUsed: modelUsed,
         headline: headline.isEmpty ? summary : headline,
         score: score,
         riskLevel: riskLevel,

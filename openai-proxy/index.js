@@ -6,20 +6,70 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
 const PROXY_VERSION = process.env.RENDER_GIT_COMMIT || process.env.PROXY_VERSION || "dev";
-const MODEL_ALLOWLIST = new Set([
-  "gpt-5.2",
-  "gpt-5.2-pro",
-  "gpt-5-mini",
-  "gpt-5-nano",
-  "gpt-5.2-codex",
-]);
+const MODEL_ALLOWLIST = new Set(["gpt-5.2", "gpt-5d"]);
+
+function normalizeModel(raw, fallback) {
+  const model = (raw || "").trim();
+  return MODEL_ALLOWLIST.has(model) ? model : fallback;
+}
+
+function getPrimaryModel() {
+  return normalizeModel(process.env.OPENAI_MODEL_PRIMARY, "gpt-5.2");
+}
+
+function getFallbackModel() {
+  return normalizeModel(process.env.OPENAI_MODEL_FALLBACK, "gpt-5d");
+}
 
 function pickModel(reqBody) {
-  const envModel = (process.env.OPENAI_MODEL || "").trim();
   const reqModel =
     reqBody && typeof reqBody.model === "string" ? reqBody.model.trim() : "";
-  const candidate = reqModel || envModel || "gpt-5.2";
-  return MODEL_ALLOWLIST.has(candidate) ? candidate : "gpt-5.2";
+  if (MODEL_ALLOWLIST.has(reqModel)) {
+    return reqModel;
+  }
+  return getPrimaryModel();
+}
+
+function shouldFallbackModel(rawText) {
+  if (!rawText) return false;
+  const text = rawText.toLowerCase();
+  return (
+    text.includes("model") &&
+    (text.includes("not found") ||
+      text.includes("does not exist") ||
+      text.includes("not available") ||
+      text.includes("not supported") ||
+      text.includes("permission") ||
+      text.includes("unauthorized") ||
+      text.includes("invalid") ||
+      text.includes("doesn't exist"))
+  );
+}
+
+async function callOpenAI(apiKey, payload, primaryModel) {
+  const fallbackModel = getFallbackModel();
+  const tryOnce = async (model) => {
+    const body = JSON.stringify({ ...payload, model });
+    const r = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body,
+    });
+    const raw = await r.text().catch(() => "");
+    return { r, raw, model };
+  };
+
+  const first = await tryOnce(primaryModel);
+  if (first.r.ok) {
+    return first;
+  }
+  if (primaryModel !== fallbackModel && shouldFallbackModel(first.raw)) {
+    return tryOnce(fallbackModel);
+  }
+  return first;
 }
 
 // ===== Helpers =====
@@ -190,6 +240,8 @@ function normalizeResult(parsed) {
 
   out.ok = out.ok === false ? false : true;
   out.schema_version = 2;
+  out.model_used = typeof out.model_used === "string" ? out.model_used : undefined;
+  out.proxy_version = typeof out.proxy_version === "string" ? out.proxy_version : PROXY_VERSION;
   out.score = Number.isFinite(Number(out.score)) ? Number(out.score) : base.score;
   out.risk_level = ["low", "medium", "high"].includes(out.risk_level)
     ? out.risk_level
@@ -295,7 +347,7 @@ function normalizeResult(parsed) {
     "尿量是否减少？",
     "最近饮食有无明显变化？",
   ]);
-  out.ui_strings.sections = ensureMinItems(
+  const sections = ensureMinItems(
     out.ui_strings.sections,
     4,
     base.ui_strings.sections
@@ -314,6 +366,39 @@ function normalizeResult(parsed) {
     ),
   }));
 
+  const dietItems = out.actions_today.slice(0);
+  const hydrationItems = out.actions_today.slice(0);
+  const careItems = out.actions_today.slice(0);
+  const warningItems = out.red_flags.map(String);
+  const questionItems = out.follow_up_questions.slice(0);
+
+  const hasDuplicateSections = sections.every((sec) => {
+    const key = JSON.stringify(sec.items || []);
+    return sections.every((s) => JSON.stringify(s.items || []) === key);
+  });
+
+  out.ui_strings.sections = hasDuplicateSections
+    ? [
+        { title: "饮食", icon_key: "diet", items: ensureMinItems(dietItems, 2, ["清淡饮食", "少量多餐"]) },
+        {
+          title: "补液",
+          icon_key: "hydration",
+          items: ensureMinItems(hydrationItems, 2, ["少量多次补液", "观察尿量"]),
+        },
+        { title: "护理", icon_key: "care", items: ensureMinItems(careItems, 2, ["便后清洁", "保持干爽"]) },
+        {
+          title: "警戒信号",
+          icon_key: "warning",
+          items: ensureMinItems(warningItems, 2, ["出现便血或黑便", "持续高热或明显不适"]),
+        },
+        {
+          title: "追问问题",
+          icon_key: "question",
+          items: ensureMinItems(questionItems, 2, ["是否发热？", "24小时内排便次数多少？"]),
+        },
+      ]
+    : sections;
+
   return out;
 }
 
@@ -323,7 +408,7 @@ app.get("/ping", (_req, res) =>
     ok: true,
     proxy_version: PROXY_VERSION,
     schema_version: 2,
-    model: process.env.OPENAI_MODEL || "gpt-5.2",
+    model: getPrimaryModel(),
   })
 );
 app.get("/health", (_req, res) => res.json({ ok: true, ts: nowISO() }));
@@ -336,7 +421,6 @@ app.post("/analyze", async (req, res) => {
     const model = pickModel(req.body);
     res.setHeader("x-proxy-version", PROXY_VERSION);
     res.setHeader("schema_version", "2");
-    res.setHeader("x-openai-model", model);
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -358,7 +442,6 @@ app.post("/analyze", async (req, res) => {
     }
 
     const payload = {
-      model,
       input: [
         {
           role: "system",
@@ -378,35 +461,47 @@ app.post("/analyze", async (req, res) => {
     };
 
     console.log(`[OPENAI] request model=${model} text.format=json_object`);
-    const r = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
+    const { r, raw, model: usedModel } = await callOpenAI(apiKey, payload, model);
     console.log(`[OPENAI] response status=${r.status}`);
 
-    const raw = await r.text().catch(() => "");
+    res.setHeader("x-openai-model", usedModel);
     if (!r.ok) {
-      return res.status(502).json({ ok: false, error: "OPENAI_ERROR", message: raw || `OpenAI failed (${r.status})` });
+      return res.status(502).json({
+        ok: false,
+        error: "OPENAI_ERROR",
+        message: raw || `OpenAI failed (${r.status})`,
+        model_used: usedModel,
+        schema_version: 2,
+      });
     }
 
     const data = JSON.parse(raw);
     const outputText = extractOutputText(data);
     if (!outputText) {
-      return res.status(502).json({ ok: false, error: "EMPTY_OUTPUT", message: "OpenAI response missing output text" });
+      return res.status(502).json({
+        ok: false,
+        error: "EMPTY_OUTPUT",
+        message: "OpenAI response missing output text",
+        model_used: usedModel,
+        schema_version: 2,
+      });
     }
 
     let parsed;
     try {
       parsed = JSON.parse(outputText);
     } catch (e) {
-      return res.status(502).json({ ok: false, error: "INVALID_JSON", message: "OpenAI returned non-JSON output" });
+      return res.status(502).json({
+        ok: false,
+        error: "INVALID_JSON",
+        message: "OpenAI returned non-JSON output",
+        model_used: usedModel,
+        schema_version: 2,
+      });
     }
 
     const normalized = normalizeResult(parsed);
+    normalized.model_used = usedModel;
     res.setHeader("schema_version", String(normalized.schema_version || 2));
     return res.json(normalized);
   } catch (err) {

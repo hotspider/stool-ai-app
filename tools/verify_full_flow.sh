@@ -31,6 +31,32 @@ except Exception as e:
   print("read body failed:", e)
 PY
 
+echo "==> model echo"
+python3 - <<'PY'
+import json
+import re
+
+headers = ""
+try:
+  with open("/tmp/analyze_headers.txt","r",encoding="utf-8") as f:
+    headers = f.read()
+except Exception:
+  pass
+
+model_header = None
+for line in headers.splitlines():
+  if line.lower().startswith("x-openai-model:"):
+    model_header = line.split(":",1)[1].strip()
+    break
+
+try:
+  data = json.load(open("/tmp/analyze_body.json","r",encoding="utf-8"))
+  print("x-openai-model:", model_header or "missing")
+  print("model_used:", data.get("model_used"))
+except Exception as e:
+  print("model echo parse failed:", e)
+PY
+
 echo
 echo "==> If you want real image verify:"
 echo "   VERIFY_IMG=/path/to/1.jpg $0"

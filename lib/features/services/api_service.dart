@@ -55,18 +55,30 @@ class ApiService {
       debugPrint(
         'ApiService headers: x-worker-version=${response.headers['x-worker-version']} '
         'x-proxy-version=${response.headers['x-proxy-version']} '
-        'schema_version=${response.headers['schema_version']}',
+        'schema_version=${response.headers['schema_version']} '
+        'x-openai-model=${response.headers['x-openai-model']}',
       );
 
       final body = jsonDecode(response.body);
       if (body is Map<String, dynamic>) {
-        debugPrint('ApiService body schema_version: ${body['schema_version']}');
+        debugPrint(
+          'ApiService body schema_version: ${body['schema_version']} '
+          'model_used: ${body['model_used']}',
+        );
       }
       if (response.statusCode >= 400) {
-        final message = body is Map<String, dynamic>
-            ? body['message']?.toString() ?? 'Request failed'
-            : 'Request failed';
-        throw ApiServiceException(ApiServiceErrorCode.remoteError, message);
+        final errorCode = body is Map<String, dynamic>
+            ? body['error_code']?.toString()
+            : null;
+        if (errorCode == 'INVALID_IMAGE' && body is Map<String, dynamic>) {
+          debugPrint(
+              'ApiService invalid image response: ${body['message'] ?? ''}');
+        } else {
+          final message = body is Map<String, dynamic>
+              ? body['message']?.toString() ?? 'Request failed'
+              : 'Request failed';
+          throw ApiServiceException(ApiServiceErrorCode.remoteError, message);
+        }
       }
 
       if (body is! Map<String, dynamic>) {

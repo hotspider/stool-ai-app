@@ -428,143 +428,186 @@ class _ResultPageState extends State<ResultPage> {
                   confidence: structured.confidence,
                   uncertaintyNote: structured.uncertaintyNote,
                   warning: widget.validationWarning,
+                  modelUsed: structured.modelUsed,
                 ),
               ),
-              if (!structured.ok) ...[
+              if (structured.errorCode == 'INVALID_IMAGE') ...[
                 const SizedBox(height: AppSpace.s12),
                 SoftCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(l10n.resultInsufficientMessage,
-                          style: AppText.section),
-                      if (structured.uncertaintyNote.isNotEmpty) ...[
-                        const SizedBox(height: AppSpace.s8),
-                        Text(structured.uncertaintyNote, style: AppText.body),
-                      ],
-                      if (structured.followUpQuestions.isNotEmpty) ...[
-                        const SizedBox(height: AppSpace.s8),
-                        _BulletList(items: structured.followUpQuestions),
-                      ],
+                      Text('图片信息不足', style: AppText.section),
+                      const SizedBox(height: AppSpace.s8),
+                      _BulletList(
+                        items: structured.uiStrings.sections
+                            .expand((s) => s.items)
+                            .toList(),
+                      ),
+                      const SizedBox(height: AppSpace.s12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: PrimaryButton(
+                              label: '重新裁剪/重新拍摄',
+                              onPressed: () {
+                                if (context.canPop()) {
+                                  context.pop();
+                                } else {
+                                  context.go('/home');
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: AppSpace.s12),
+                          Expanded(
+                            child: SecondaryButton(
+                              label: l10n.previewBackHome,
+                              onPressed: () => context.go('/home'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-              ],
-              const SizedBox(height: AppSpace.s12),
-              Wrap(
-                spacing: AppSpace.s8,
-                runSpacing: AppSpace.s8,
-                children: [
-                  _MetricChip(
-                    label: l10n.resultMetricBristol,
-                    value: structured.stoolFeatures.bristolType == null
-                        ? l10n.resultInsufficientMessage
-                        : l10n.resultBristolValue(
-                            structured.stoolFeatures.bristolType!),
-                  ),
-                  _MetricChip(
-                    label: l10n.resultMetricColor,
-                    value: _featureLabelOrUnknown(
-                      l10n,
-                      structured.stoolFeatures.color,
+              ] else ...[
+                if (!structured.ok) ...[
+                  const SizedBox(height: AppSpace.s12),
+                  SoftCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(l10n.resultInsufficientMessage,
+                            style: AppText.section),
+                        if (structured.uncertaintyNote.isNotEmpty) ...[
+                          const SizedBox(height: AppSpace.s8),
+                          Text(structured.uncertaintyNote, style: AppText.body),
+                        ],
+                        if (structured.followUpQuestions.isNotEmpty) ...[
+                          const SizedBox(height: AppSpace.s8),
+                          _BulletList(items: structured.followUpQuestions),
+                        ],
+                      ],
                     ),
-                  ),
-                  _MetricChip(
-                    label: l10n.resultMetricTexture,
-                    value: _featureLabelOrUnknown(
-                      l10n,
-                      structured.stoolFeatures.texture,
-                    ),
-                  ),
-                  _MetricChip(
-                    label: l10n.resultMetricScore,
-                    value: '${_resolveScore(structured)}/100',
-                  ),
-                  ...structured.uiStrings.tags.map(
-                    (chip) => Chip(label: Text(chip, style: AppText.caption)),
                   ),
                 ],
-              ),
-              const SizedBox(height: AppSpace.s20),
-              SectionHeader(title: l10n.resultInsightsTitle),
-              const SizedBox(height: AppSpace.s12),
-              SoftCard(
-                child: _BulletList(items: structured.reasoningBullets),
-              ),
-              const SizedBox(height: AppSpace.s16),
-              SectionHeader(title: l10n.resultActionsTodayTitle),
-              const SizedBox(height: AppSpace.s12),
-              SoftCard(
-                child: structured.uiStrings.sections.isNotEmpty
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: structured.uiStrings.sections
-                            .map(
-                              (section) => Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: AppSpace.s12),
-                                child: _ActionSection(
-                                  title: section.title,
-                                  iconKey: section.iconKey,
-                                  items: section.items,
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: useLegacyActions
-                            ? [
-                                _ActionSection(
-                                  title: l10n.resultActionsTitle,
-                                  iconKey: 'actions',
-                                  items: legacyActions,
-                                ),
-                              ]
-                            : [
-                                _ActionSection(
-                                  title: l10n.resultActionsDiet,
-                                  iconKey: 'diet',
-                                  items: structured.actionsToday.diet,
-                                ),
-                                const SizedBox(height: AppSpace.s12),
-                                _ActionSection(
-                                  title: l10n.resultActionsHydration,
-                                  iconKey: 'hydration',
-                                  items: structured.actionsToday.hydration,
-                                ),
-                                const SizedBox(height: AppSpace.s12),
-                                _ActionSection(
-                                  title: l10n.resultActionsCare,
-                                  iconKey: 'care',
-                                  items: structured.actionsToday.care,
-                                ),
-                                const SizedBox(height: AppSpace.s12),
-                                _ActionSection(
-                                  title: l10n.resultActionsAvoid,
-                                  iconKey: 'avoid',
-                                  items: structured.actionsToday.avoid,
-                                ),
-                              ],
+                const SizedBox(height: AppSpace.s12),
+                Wrap(
+                  spacing: AppSpace.s8,
+                  runSpacing: AppSpace.s8,
+                  children: [
+                    _MetricChip(
+                      label: l10n.resultMetricBristol,
+                      value: structured.stoolFeatures.bristolType == null
+                          ? l10n.resultInsufficientMessage
+                          : l10n.resultBristolValue(
+                              structured.stoolFeatures.bristolType!),
+                    ),
+                    _MetricChip(
+                      label: l10n.resultMetricColor,
+                      value: _featureLabelOrUnknown(
+                        l10n,
+                        structured.stoolFeatures.color,
                       ),
-              ),
-              const SizedBox(height: AppSpace.s16),
-              SectionHeader(title: l10n.resultRedFlagsTitle),
-              const SizedBox(height: AppSpace.s12),
-              _WarningCard(
-                title: l10n.resultRedFlagsTitle,
-                items: structured.redFlags
-                    .map((item) => '${item.title} ${item.detail}'.trim())
-                    .toList(),
-                hint: l10n.resultWarningHint,
-              ),
-              const SizedBox(height: AppSpace.s16),
-              SectionHeader(title: l10n.resultFollowUpTitle),
-              const SizedBox(height: AppSpace.s12),
-              SoftCard(
-                child: _BulletList(items: structured.followUpQuestions),
-              ),
+                    ),
+                    _MetricChip(
+                      label: l10n.resultMetricTexture,
+                      value: _featureLabelOrUnknown(
+                        l10n,
+                        structured.stoolFeatures.texture,
+                      ),
+                    ),
+                    _MetricChip(
+                      label: l10n.resultMetricScore,
+                      value: '${_resolveScore(structured)}/100',
+                    ),
+                    ...structured.uiStrings.tags.map(
+                      (chip) => Chip(label: Text(chip, style: AppText.caption)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpace.s20),
+                SectionHeader(title: l10n.resultInsightsTitle),
+                const SizedBox(height: AppSpace.s12),
+                SoftCard(
+                  child: _BulletList(items: structured.reasoningBullets),
+                ),
+                const SizedBox(height: AppSpace.s16),
+                SectionHeader(title: l10n.resultActionsTodayTitle),
+                const SizedBox(height: AppSpace.s12),
+                SoftCard(
+                  child: structured.uiStrings.sections.isNotEmpty
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: structured.uiStrings.sections
+                              .map(
+                                (section) => Padding(
+                                  padding: const EdgeInsets.only(
+                                      bottom: AppSpace.s12),
+                                  child: _ActionSection(
+                                    title: section.title,
+                                    iconKey: section.iconKey,
+                                    items: section.items,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: useLegacyActions
+                              ? [
+                                  _ActionSection(
+                                    title: l10n.resultActionsTitle,
+                                    iconKey: 'actions',
+                                    items: legacyActions,
+                                  ),
+                                ]
+                              : [
+                                  _ActionSection(
+                                    title: l10n.resultActionsDiet,
+                                    iconKey: 'diet',
+                                    items: structured.actionsToday.diet,
+                                  ),
+                                  const SizedBox(height: AppSpace.s12),
+                                  _ActionSection(
+                                    title: l10n.resultActionsHydration,
+                                    iconKey: 'hydration',
+                                    items: structured.actionsToday.hydration,
+                                  ),
+                                  const SizedBox(height: AppSpace.s12),
+                                  _ActionSection(
+                                    title: l10n.resultActionsCare,
+                                    iconKey: 'care',
+                                    items: structured.actionsToday.care,
+                                  ),
+                                  const SizedBox(height: AppSpace.s12),
+                                  _ActionSection(
+                                    title: l10n.resultActionsAvoid,
+                                    iconKey: 'avoid',
+                                    items: structured.actionsToday.avoid,
+                                  ),
+                                ],
+                        ),
+                ),
+                const SizedBox(height: AppSpace.s16),
+                SectionHeader(title: l10n.resultRedFlagsTitle),
+                const SizedBox(height: AppSpace.s12),
+                _WarningCard(
+                  title: l10n.resultRedFlagsTitle,
+                  items: structured.redFlags
+                      .map((item) => '${item.title} ${item.detail}'.trim())
+                      .toList(),
+                  hint: l10n.resultWarningHint,
+                ),
+                const SizedBox(height: AppSpace.s16),
+                SectionHeader(title: l10n.resultFollowUpTitle),
+                const SizedBox(height: AppSpace.s12),
+                SoftCard(
+                  child: _BulletList(items: structured.followUpQuestions),
+                ),
+              ],
               const SizedBox(height: AppSpace.s16),
               SectionHeader(title: l10n.resultExtraTitle),
               const SizedBox(height: AppSpace.s12),
@@ -831,6 +874,7 @@ class _SummaryCard extends StatelessWidget {
   final double confidence;
   final String uncertaintyNote;
   final String? warning;
+  final String modelUsed;
 
   const _SummaryCard({
     required this.riskLevel,
@@ -841,6 +885,7 @@ class _SummaryCard extends StatelessWidget {
     required this.summary,
     required this.confidence,
     required this.uncertaintyNote,
+    required this.modelUsed,
     this.warning,
   });
 
@@ -890,6 +935,10 @@ class _SummaryCard extends StatelessWidget {
                       color: AppColors.riskMedium,
                     ),
                   ),
+                ],
+                if (kDebugMode && modelUsed.isNotEmpty) ...[
+                  const SizedBox(height: AppSpace.s8),
+                  Text('model: $modelUsed', style: AppText.caption),
                 ],
               ],
             ),
