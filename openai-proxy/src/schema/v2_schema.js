@@ -31,6 +31,17 @@ const V2_SCHEMA_JSON = {
     "ok": { "type": "boolean" },
     "schema_version": { "type": "integer", "enum": [2] },
     "is_stool_image": { "type": "boolean" },
+    "stool_confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "stool_scene": {
+      "type": "string",
+      "enum": ["diaper", "toilet", "potty", "tissue", "floor", "unknown"]
+    },
+    "stool_form_hint": {
+      "type": "string",
+      "enum": ["watery", "mushy", "soft", "formed", "pellets", "mixed", "unknown"]
+    },
+    "not_stool_reason": { "type": "string" },
+    "stool_detection_rationale": { "type": "string" },
     "headline": { "type": "string", "minLength": 1 },
     "score": { "type": "integer", "minimum": 0, "maximum": 100 },
     "risk_level": { "type": "string", "enum": ["low", "medium", "high", "unknown"] },
@@ -292,7 +303,16 @@ const V2_SCHEMA_JSON = {
       "properties": {
         "status": { "type": "string" },
         "reason": { "type": "string" },
-        "tips": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        "tips": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "stool_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "stool_scene": {
+          "type": "string",
+          "enum": ["diaper", "toilet", "potty", "tissue", "floor", "unknown"]
+        },
+        "stool_form_hint": {
+          "type": "string",
+          "enum": ["watery", "mushy", "soft", "formed", "pellets", "mixed", "unknown"]
+        }
       }
     }
   }

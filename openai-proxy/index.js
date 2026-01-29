@@ -410,6 +410,11 @@ function buildDefaultResult() {
     ok: true,
     schema_version: 2,
     is_stool_image: true,
+    stool_confidence: null,
+    stool_scene: "unknown",
+    stool_form_hint: "unknown",
+    not_stool_reason: "",
+    stool_detection_rationale: "",
     headline: "",
     score: 50,
     risk_level: "low",
@@ -522,6 +527,15 @@ function buildNotStoolResult(guard) {
     ...base,
     ok: false,
     is_stool_image: false,
+    stool_confidence: Number.isFinite(Number(guard?.stool_confidence))
+      ? Number(guard.stool_confidence)
+      : Number.isFinite(Number(guard?.confidence))
+        ? Number(guard.confidence)
+        : 0,
+    stool_scene: guard?.stool_scene || "unknown",
+    stool_form_hint: guard?.stool_form_hint || "unknown",
+    not_stool_reason: guard?.not_stool_reason || guard?.reason || "未识别到大便图像。",
+    stool_detection_rationale: guard?.stool_detection_rationale || "",
     error_code: "NOT_STOOL_IMAGE",
     error: "NOT_STOOL_IMAGE",
     headline: "这张图片未识别到大便，暂时无法分析",
@@ -622,6 +636,18 @@ function normalizeResult(parsed) {
   out.ok = out.ok === false ? false : true;
   out.schema_version = 2;
   out.is_stool_image = out.is_stool_image === false ? false : true;
+  out.stool_confidence = Number.isFinite(Number(out.stool_confidence))
+    ? Number(out.stool_confidence)
+    : base.stool_confidence;
+  out.stool_scene = typeof out.stool_scene === "string" && out.stool_scene.trim()
+    ? out.stool_scene.trim()
+    : base.stool_scene;
+  out.stool_form_hint = typeof out.stool_form_hint === "string" && out.stool_form_hint.trim()
+    ? out.stool_form_hint.trim()
+    : base.stool_form_hint;
+  out.not_stool_reason = typeof out.not_stool_reason === "string" ? out.not_stool_reason : "";
+  out.stool_detection_rationale =
+    typeof out.stool_detection_rationale === "string" ? out.stool_detection_rationale : "";
   out.model_used = typeof out.model_used === "string" && out.model_used.trim()
     ? out.model_used.trim()
     : base.model_used;
@@ -1241,7 +1267,19 @@ app.post("/analyze", async (req, res) => {
     console.log(
       `[GUARD] is_stool=${guardResult.is_stool} confidence=${guardResult.confidence} reason=${guardResult.reason}`
     );
-    if (!guardResult.is_stool) {
+    const userConfirmed = req.body?.user_confirmed_stool === true;
+    const guardConf = Number.isFinite(Number(guardResult.stool_confidence))
+      ? Number(guardResult.stool_confidence)
+      : Number.isFinite(Number(guardResult.confidence))
+        ? Number(guardResult.confidence)
+        : 0;
+    const lowFloor = userConfirmed ? 0.18 : 0.25;
+    const guardProceed = guardConf >= 0.45 || guardConf >= lowFloor;
+    const lowConfMode = guardConf >= lowFloor && guardConf < 0.45;
+    console.log(
+      `[GUARD] stool_confidence=${guardConf.toFixed(2)} scene=${guardResult.stool_scene || "unknown"} form=${guardResult.stool_form_hint || "unknown"} => proceed=${guardProceed} ${lowConfMode ? "(low_conf_mode)" : ""}`
+    );
+    if (!guardProceed) {
       const notStool = normalizeResult(buildNotStoolResult(guardResult));
       notStool.model_used = guardResult.model_used || model;
       notStool.model_primary = getPrimaryModel();
@@ -1395,6 +1433,25 @@ app.post("/analyze", async (req, res) => {
     normalized.model_fallback = getFallbackModel();
     normalized.used_fallback = usedFallback;
     normalized.primary_error = primaryError;
+    normalized.stool_confidence = guardConf;
+    normalized.stool_scene = guardResult.stool_scene || "unknown";
+    normalized.stool_form_hint = guardResult.stool_form_hint || "unknown";
+    normalized.stool_detection_rationale = guardResult.stool_detection_rationale || "";
+    normalized.not_stool_reason = guardResult.not_stool_reason || "";
+    if (lowConfMode) {
+      normalized.is_stool_image = true;
+      normalized.confidence = Math.min(normalized.confidence || 1, 0.4, guardConf);
+      normalized.uncertainty_note =
+        "识别不确定（可能为糊状/尿不湿场景），仍提供参考分析，建议补拍清晰近距图片。";
+      normalized.image_validation = {
+        status: "low_confidence",
+        reason: guardResult.stool_detection_rationale || "识别置信度较低",
+        tips: ["光线充足", "对焦清晰", "目标占画面 50% 以上"],
+        stool_confidence: guardConf,
+        stool_scene: guardResult.stool_scene || "unknown",
+        stool_form_hint: guardResult.stool_form_hint || "unknown",
+      };
+    }
     if ((req.body?.context || req.body?.context_input) && !normalized.context_input) {
       normalized.context_input = req.body.context || req.body.context_input;
     }
