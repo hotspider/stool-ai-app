@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
 
@@ -37,10 +38,18 @@ class _PreviewPageState extends State<PreviewPage> {
   final ImageValidator _validator = BasicImageValidator();
   AnalyzeContext _ctx = const AnalyzeContext();
   bool _userConfirmedStool = false;
+  bool _allowEmptyContextDebug = false;
+  bool _showValidationErrors = false;
   Uint8List? _bytes;
   bool _isValidating = false;
   bool _isAnalyzing = false;
   ImageValidationResult? _validation;
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final ScrollController _scrollController = ScrollController();
+  final FocusNode _foodsFocus = FocusNode();
+  final FocusNode _drinksFocus = FocusNode();
+  final FocusNode _moodFocus = FocusNode();
+  final FocusNode _notesFocus = FocusNode();
   late final TextEditingController _foodsController;
   late final TextEditingController _drinksController;
   late final TextEditingController _moodController;
@@ -66,6 +75,11 @@ class _PreviewPageState extends State<PreviewPage> {
 
   @override
   void dispose() {
+    _foodsFocus.dispose();
+    _drinksFocus.dispose();
+    _moodFocus.dispose();
+    _notesFocus.dispose();
+    _scrollController.dispose();
     _foodsController.dispose();
     _drinksController.dispose();
     _moodController.dispose();
@@ -281,8 +295,55 @@ class _PreviewPageState extends State<PreviewPage> {
     );
   }
 
+  bool _isValidContextText(String? value) {
+    final raw = value?.trim() ?? '';
+    if (raw.length < 2) return false;
+    final normalized = raw.toLowerCase();
+    const invalid = {
+      '无',
+      '没有',
+      '不清楚',
+      '不知道',
+      '-',
+      '—',
+      'ok',
+      '1',
+    };
+    return !invalid.contains(normalized);
+  }
+
+  bool _hasValidContext() {
+    return _isValidContextText(_foodsController.text) ||
+        _isValidContextText(_drinksController.text) ||
+        _isValidContextText(_moodController.text) ||
+        _isValidContextText(_notesController.text);
+  }
+
+  String? _contextValidator(String? value) {
+    if (!_showValidationErrors) return null;
+    return _isValidContextText(value) ? null : '请补充信息';
+  }
+
   Future<void> _startAnalyze() async {
     if (_bytes == null || _isAnalyzing) {
+      return;
+    }
+    if (!_allowEmptyContextDebug && !_hasValidContext()) {
+      setState(() => _showValidationErrors = true);
+      _formKey.currentState?.validate();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('请先补充信息（如：吃了什么/喝了什么/精神状态），再提交分析。'),
+          ),
+        );
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+        _foodsFocus.requestFocus();
+      }
       return;
     }
     if (_validation != null && _validation!.ok == false) {
@@ -313,6 +374,7 @@ class _PreviewPageState extends State<PreviewPage> {
         painOrStrain: false,
         context: _ctx,
         userConfirmedStool: _userConfirmedStool,
+        mode: _allowEmptyContextDebug ? 'debug' : 'prod',
       );
       if (!mounted) {
         return;
@@ -548,6 +610,7 @@ class _PreviewPageState extends State<PreviewPage> {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
+                controller: _scrollController,
                 child: _buildExtraInputsForm(),
               ),
             ),
@@ -578,9 +641,11 @@ class _PreviewPageState extends State<PreviewPage> {
 
   Widget _buildExtraInputsForm() {
     final l10n = AppLocalizations.of(context)!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         if (_isValidating)
           Row(
             children: [
@@ -632,18 +697,24 @@ class _PreviewPageState extends State<PreviewPage> {
           label: '吃了什么',
           hint: '例如：香蕉+米饭',
           controller: _foodsController,
+          focusNode: _foodsFocus,
+          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.md),
         _buildTextFieldCard(
           label: '喝了什么',
           hint: '例如：牛奶+温水',
           controller: _drinksController,
+          focusNode: _drinksFocus,
+          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.md),
         _buildTextFieldCard(
           label: '精神状态',
           hint: '例如：精神好/一般/嗜睡/烦躁',
           controller: _moodController,
+          focusNode: _moodFocus,
+          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.md),
         _buildTextFieldCard(
@@ -651,13 +722,32 @@ class _PreviewPageState extends State<PreviewPage> {
           hint: '例如：无发热，无呕吐，次数不多',
           controller: _notesController,
           maxLines: 4,
+          focusNode: _notesFocus,
+          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.lg),
+        if (kDebugMode)
+          TextButton(
+            onPressed: () {
+              setState(() => _allowEmptyContextDebug = !_allowEmptyContextDebug);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _allowEmptyContextDebug ? '已开启跳过补充信息（仅调试）' : '已关闭跳过补充信息',
+                  ),
+                ),
+              );
+            },
+            child: Text(
+              _allowEmptyContextDebug ? '关闭跳过补充信息（仅调试）' : '跳过补充信息（仅调试）',
+            ),
+          ),
         OutlinedButton(
           onPressed: () => _repick(ImageSourceType.gallery),
           child: Text(l10n.previewRechoose),
         ),
       ],
+      ),
     );
   }
 
@@ -666,6 +756,8 @@ class _PreviewPageState extends State<PreviewPage> {
     required String hint,
     required TextEditingController controller,
     int maxLines = 1,
+    FocusNode? focusNode,
+    String? Function(String?)? validator,
   }) {
     return AppCard(
       child: Column(
@@ -673,9 +765,11 @@ class _PreviewPageState extends State<PreviewPage> {
         children: [
           Text(label, style: UiText.section),
           const SizedBox(height: UiSpacing.sm),
-          TextField(
+          TextFormField(
             controller: controller,
             maxLines: maxLines,
+            focusNode: focusNode,
+            validator: validator,
             decoration: InputDecoration(
               hintText: hint,
             ),
