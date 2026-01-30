@@ -21,7 +21,9 @@ class StoolAnalysisResult {
   final int score;
   final String riskLevel;
   final double confidence;
+  final double analysisConfidence;
   final String uncertaintyNote;
+  final String imageValidationStatus;
   final StoolFeatures stoolFeatures;
   final DoctorExplanation doctorExplanation;
   final List<PossibleCause> possibleCauses;
@@ -50,7 +52,9 @@ class StoolAnalysisResult {
     required this.score,
     required this.riskLevel,
     required this.confidence,
+    required this.analysisConfidence,
     required this.uncertaintyNote,
+    required this.imageValidationStatus,
     required this.stoolFeatures,
     required this.doctorExplanation,
     required this.possibleCauses,
@@ -143,7 +147,15 @@ class StoolAnalysisResult {
     final score = _int('score');
     final riskLevel = _string('risk_level', fallback: 'low');
     final confidence = _double('confidence');
+    final analysisConfidence =
+        _double('analysis_confidence', fallback: confidence);
     final uncertaintyNote = _string('uncertainty_note');
+    String imageValidationStatus = '';
+    final imageValidation = json['image_validation'];
+    if (imageValidation is Map) {
+      imageValidationStatus =
+          imageValidation['status']?.toString() ?? '';
+    }
     final isStoolImage = json['is_stool_image'] != false;
     final explanation = json['explanation']?.toString() ?? '';
     Map<String, dynamic>? inputContext;
@@ -226,7 +238,9 @@ class StoolAnalysisResult {
         score: score,
         riskLevel: riskLevel,
         confidence: confidence,
+        analysisConfidence: analysisConfidence,
         uncertaintyNote: uncertaintyNote,
+        imageValidationStatus: imageValidationStatus,
         stoolFeatures: stoolFeatures,
         doctorExplanation: doctorExplanation,
         possibleCauses: possibleCauses,

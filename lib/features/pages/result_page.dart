@@ -387,7 +387,7 @@ class _ResultPageState extends State<ResultPage> {
     final analysis = _analysis;
     final advice = _advice;
     final structured = _structured?.result;
-    final canUseResult = structured != null && structured.ok;
+    final canUseResult = structured?.ok == true;
     final legacyActions = advice?.next48hActions ?? const [];
     final hasStructuredActions = structured != null &&
         (structured.actionsToday.diet.isNotEmpty ||
@@ -397,9 +397,10 @@ class _ResultPageState extends State<ResultPage> {
             structured.actionsToday.observe.isNotEmpty);
     final useLegacyActions =
         structured != null && !hasStructuredActions && legacyActions.isNotEmpty;
-    final showNonStool = structured != null &&
-        (structured.errorCode == 'NOT_STOOL_IMAGE' ||
-            structured.isStoolImage == false);
+    final isLowConfidence = structured != null &&
+        structured.ok &&
+        (structured.analysisConfidence < 0.5 ||
+            structured.imageValidationStatus == 'low_confidence');
 
     return AppScaffold(
       title: l10n.resultTitle,
@@ -427,61 +428,21 @@ class _ResultPageState extends State<ResultPage> {
                   style: UiText.body,
                 ),
               ),
-            ] else if (showNonStool) ...[
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('未检测到大便', style: UiText.title),
-                    const SizedBox(height: UiSpacing.sm),
-                    Text(
-                      '这张图片看起来不像大便，无法进行分析。',
-                      style: UiText.body,
-                    ),
-                    const SizedBox(height: UiSpacing.sm),
-                    Text(
-                      structured.explanation.isNotEmpty
-                          ? structured.explanation
-                          : '建议重新拍摄更清晰、目标更居中的照片。',
-                      style: UiText.hint,
-                    ),
-                    const SizedBox(height: UiSpacing.md),
-                    ui.PrimaryButton(
-                      label: '查看重拍建议',
-                      onPressed: () => context.push('/non-stool',
-                          extra: structured.explanation),
-                    ),
-                  ],
-                ),
-              ),
             ] else if (!structured.ok) ...[
               AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('信息不足，建议补充后再判断', style: UiText.section),
-                    const SizedBox(height: UiSpacing.sm),
-                    Text(
-                      structured.uncertaintyNote.isNotEmpty
-                          ? structured.uncertaintyNote
-                          : '图片角度或光线可能影响判断，请补充信息或重新拍摄。',
-                      style: UiText.body,
-                    ),
-                    const SizedBox(height: UiSpacing.md),
-                    ui.PrimaryButton(
-                      label: '返回补充信息',
-                      onPressed: () {
-                        if (context.canPop()) {
-                          context.pop();
-                        } else {
-                          context.go('/home');
-                        }
-                      },
-                    ),
-                  ],
+                child: Text(
+                  l10n.resultInsufficientMessage,
+                  style: UiText.body,
                 ),
               ),
             ] else ...[
+              if (isLowConfidence)
+                NoticeBanner(
+                  title: '识别置信度较低，以下为参考分析',
+                  items: const ['建议下次拍更近更清晰'],
+                  color: UiColors.riskMedium,
+                ),
+              if (isLowConfidence) const SizedBox(height: UiSpacing.md),
               ..._buildDoctorReport(
                 context,
                 structured,
@@ -568,7 +529,7 @@ class _ResultPageState extends State<ResultPage> {
       structured.doctorExplanation.oneSentenceConclusion,
       fallback: _safeText(structured.headline, fallback: '整体情况偏可观察。'),
     );
-    final confidencePercent = (structured.confidence * 100).round();
+    final confidencePercent = (structured.analysisConfidence * 100).round();
     final model = widget.debugInfo?['model_used'] ??
         (structured.modelUsed.trim().isNotEmpty
             ? structured.modelUsed
@@ -1025,7 +986,8 @@ class _ResultPageState extends State<ResultPage> {
       longform.reassure,
       fallback: '如果精神好、吃得下、睡得稳、次数不多，大多属于可观察型。',
     );
-    final showGuidance = !structured.ok || structured.confidence < 0.45;
+    final showGuidance = structured.analysisConfidence < 0.5 ||
+        structured.imageValidationStatus == 'low_confidence';
 
     final canDo = [
       ...structured.actionsToday.diet,

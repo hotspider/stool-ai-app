@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -37,19 +39,12 @@ class PreviewPage extends StatefulWidget {
 class _PreviewPageState extends State<PreviewPage> {
   final ImageValidator _validator = BasicImageValidator();
   AnalyzeContext _ctx = const AnalyzeContext();
-  bool _userConfirmedStool = false;
   bool _allowEmptyContextDebug = false;
-  bool _showValidationErrors = false;
   Uint8List? _bytes;
   bool _isValidating = false;
   bool _isAnalyzing = false;
   ImageValidationResult? _validation;
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
-  final FocusNode _foodsFocus = FocusNode();
-  final FocusNode _drinksFocus = FocusNode();
-  final FocusNode _moodFocus = FocusNode();
-  final FocusNode _notesFocus = FocusNode();
   late final TextEditingController _foodsController;
   late final TextEditingController _drinksController;
   late final TextEditingController _moodController;
@@ -75,10 +70,6 @@ class _PreviewPageState extends State<PreviewPage> {
 
   @override
   void dispose() {
-    _foodsFocus.dispose();
-    _drinksFocus.dispose();
-    _moodFocus.dispose();
-    _notesFocus.dispose();
     _scrollController.dispose();
     _foodsController.dispose();
     _drinksController.dispose();
@@ -88,19 +79,15 @@ class _PreviewPageState extends State<PreviewPage> {
   }
 
   void _syncContext() {
+    final foods = _foodsController.text.trim();
+    final drinks = _drinksController.text.trim();
+    final mood = _moodController.text.trim();
+    final notes = _notesController.text.trim();
     _ctx = AnalyzeContext(
-      foodsEaten: _foodsController.text.trim().isEmpty
-          ? null
-          : _foodsController.text.trim(),
-      drinksTaken: _drinksController.text.trim().isEmpty
-          ? null
-          : _drinksController.text.trim(),
-      moodState: _moodController.text.trim().isEmpty
-          ? null
-          : _moodController.text.trim(),
-      otherNotes: _notesController.text.trim().isEmpty
-          ? null
-          : _notesController.text.trim(),
+      foodsEaten: foods.isEmpty ? '未填写' : foods,
+      drinksTaken: drinks.isEmpty ? '未填写' : drinks,
+      moodState: mood.isEmpty ? '未填写' : mood,
+      otherNotes: notes.isEmpty ? null : notes,
     );
   }
 
@@ -295,56 +282,49 @@ class _PreviewPageState extends State<PreviewPage> {
     );
   }
 
-  bool _isValidContextText(String? value) {
-    final raw = value?.trim() ?? '';
-    if (raw.length < 2) return false;
-    final normalized = raw.toLowerCase();
-    const invalid = {
-      '无',
-      '没有',
-      '不清楚',
-      '不知道',
-      '-',
-      '—',
-      'ok',
-      '1',
-    };
-    return !invalid.contains(normalized);
-  }
-
-  bool _hasValidContext() {
-    return _isValidContextText(_foodsController.text) ||
-        _isValidContextText(_drinksController.text) ||
-        _isValidContextText(_moodController.text) ||
-        _isValidContextText(_notesController.text);
-  }
-
-  String? _contextValidator(String? value) {
-    if (!_showValidationErrors) return null;
-    return _isValidContextText(value) ? null : '请补充信息';
+  Future<(int width, int height)?> _decodeImageSize(Uint8List bytes) async {
+    try {
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromList(bytes, (image) => completer.complete(image));
+      final image = await completer.future;
+      final size = (image.width, image.height);
+      image.dispose();
+      return size;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _startAnalyze() async {
     if (_bytes == null || _isAnalyzing) {
       return;
     }
-    if (!_allowEmptyContextDebug && !_hasValidContext()) {
-      setState(() => _showValidationErrors = true);
-      _formKey.currentState?.validate();
+    final imageSize = await _decodeImageSize(_bytes!);
+    final width = imageSize?.$1 ?? 0;
+    final height = imageSize?.$2 ?? 0;
+    debugPrint(
+      '[Preview] upload image size: ${width}x$height bytes=${_bytes!.length}',
+    );
+    const minEdge = 800;
+    const minBytes = 60 * 1024;
+    if (width < minEdge || height < minEdge || _bytes!.length < minBytes) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('请先补充信息（如：吃了什么/喝了什么/精神状态），再提交分析。'),
+            content: Text('建议更近更清晰，目标占画面 50% 以上（仍可继续分析）'),
           ),
         );
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-        _foodsFocus.requestFocus();
       }
-      return;
+    }
+    final foods = _foodsController.text.trim();
+    final drinks = _drinksController.text.trim();
+    final mood = _moodController.text.trim();
+    if (foods.isEmpty || drinks.isEmpty || mood.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('补充吃喝/精神状态可让分析更准确（可跳过）')),
+        );
+      }
     }
     if (_validation != null && _validation!.ok == false) {
       if (_validation!.reason == ImageValidationReason.tooSmall) {
@@ -352,9 +332,6 @@ class _PreviewPageState extends State<PreviewPage> {
             await _showQualityDialog(_validation!.reason, allowProceed: true);
         if (!proceed) {
           return;
-        }
-        if (mounted) {
-          setState(() => _userConfirmedStool = true);
         }
       } else {
         await _showQualityDialog(_validation!.reason);
@@ -373,7 +350,6 @@ class _PreviewPageState extends State<PreviewPage> {
         odor: 'none',
         painOrStrain: false,
         context: _ctx,
-        userConfirmedStool: _userConfirmedStool,
         mode: _allowEmptyContextDebug ? 'debug' : 'prod',
       );
       if (!mounted) {
@@ -390,14 +366,7 @@ class _PreviewPageState extends State<PreviewPage> {
             _validation?.weakPass == true ? l10n.previewWeakPass : null,
         debugInfo: result.debugInfo,
       );
-      final structured = result.structured?.result;
-      if (structured != null &&
-          (structured.errorCode == 'NOT_STOOL_IMAGE' ||
-              structured.isStoolImage == false)) {
-        context.push('/non-stool', extra: structured.explanation);
-      } else {
-        context.push('/result', extra: payload);
-      }
+      context.push('/result', extra: payload);
     } on ApiServiceException catch (e) {
       if (!mounted) {
         return;
@@ -641,11 +610,9 @@ class _PreviewPageState extends State<PreviewPage> {
 
   Widget _buildExtraInputsForm() {
     final l10n = AppLocalizations.of(context)!;
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         if (_isValidating)
           Row(
             children: [
@@ -675,19 +642,9 @@ class _PreviewPageState extends State<PreviewPage> {
         const SizedBox(height: 6),
         Text('建议：目标占画面 50% 以上', style: UiText.hint),
         const SizedBox(height: UiSpacing.lg),
-        AppCard(
-          child: SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('我确认这是大便（提高识别容错）'),
-            subtitle: const Text('用于糊状/尿不湿场景，系统会以低置信度继续分析'),
-            value: _userConfirmedStool,
-            onChanged: (v) => setState(() => _userConfirmedStool = v),
-          ),
-        ),
-        const SizedBox(height: UiSpacing.lg),
         const SectionHeader(
           icon: Icons.edit_note,
-          title: '补充信息（可选）',
+          title: '补充信息',
           tag: '提升准确度',
         ),
         const SizedBox(height: UiSpacing.sm),
@@ -697,24 +654,18 @@ class _PreviewPageState extends State<PreviewPage> {
           label: '吃了什么',
           hint: '例如：香蕉+米饭',
           controller: _foodsController,
-          focusNode: _foodsFocus,
-          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.md),
         _buildTextFieldCard(
           label: '喝了什么',
           hint: '例如：牛奶+温水',
           controller: _drinksController,
-          focusNode: _drinksFocus,
-          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.md),
         _buildTextFieldCard(
           label: '精神状态',
           hint: '例如：精神好/一般/嗜睡/烦躁',
           controller: _moodController,
-          focusNode: _moodFocus,
-          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.md),
         _buildTextFieldCard(
@@ -722,8 +673,6 @@ class _PreviewPageState extends State<PreviewPage> {
           hint: '例如：无发热，无呕吐，次数不多',
           controller: _notesController,
           maxLines: 4,
-          focusNode: _notesFocus,
-          validator: _contextValidator,
         ),
         const SizedBox(height: UiSpacing.lg),
         if (kDebugMode)
@@ -733,13 +682,13 @@ class _PreviewPageState extends State<PreviewPage> {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    _allowEmptyContextDebug ? '已开启跳过补充信息（仅调试）' : '已关闭跳过补充信息',
+                    _allowEmptyContextDebug ? '已开启调试模式' : '已关闭调试模式',
                   ),
                 ),
               );
             },
             child: Text(
-              _allowEmptyContextDebug ? '关闭跳过补充信息（仅调试）' : '跳过补充信息（仅调试）',
+              _allowEmptyContextDebug ? '关闭调试模式' : '开启调试模式',
             ),
           ),
         OutlinedButton(
@@ -747,7 +696,6 @@ class _PreviewPageState extends State<PreviewPage> {
           child: Text(l10n.previewRechoose),
         ),
       ],
-      ),
     );
   }
 
@@ -756,8 +704,6 @@ class _PreviewPageState extends State<PreviewPage> {
     required String hint,
     required TextEditingController controller,
     int maxLines = 1,
-    FocusNode? focusNode,
-    String? Function(String?)? validator,
   }) {
     return AppCard(
       child: Column(
@@ -768,8 +714,6 @@ class _PreviewPageState extends State<PreviewPage> {
           TextFormField(
             controller: controller,
             maxLines: maxLines,
-            focusNode: focusNode,
-            validator: validator,
             decoration: InputDecoration(
               hintText: hint,
             ),
