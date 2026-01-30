@@ -299,6 +299,14 @@ class _PreviewPageState extends State<PreviewPage> {
     if (_bytes == null || _isAnalyzing) {
       return;
     }
+    if (_bytes!.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('图片读取失败，请重新选择')),
+        );
+      }
+      return;
+    }
     final imageSize = await _decodeImageSize(_bytes!);
     final width = imageSize?.$1 ?? 0;
     final height = imageSize?.$2 ?? 0;
@@ -322,7 +330,7 @@ class _PreviewPageState extends State<PreviewPage> {
     if (foods.isEmpty || drinks.isEmpty || mood.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('补充吃喝/精神状态可让分析更准确（可跳过）')),
+          const SnackBar(content: Text('建议补充饮食与精神状态，分析更准确')),
         );
       }
     }
@@ -366,6 +374,14 @@ class _PreviewPageState extends State<PreviewPage> {
             _validation?.weakPass == true ? l10n.previewWeakPass : null,
         debugInfo: result.debugInfo,
       );
+      final structured = result.structured?.result;
+      if (structured?.ok == false &&
+          structured?.errorCode == 'INVALID_IMAGE') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('图片无法解析，请重新选择')),
+        );
+        return;
+      }
       context.push('/result', extra: payload);
     } on ApiServiceException catch (e) {
       if (!mounted) {

@@ -387,7 +387,7 @@ class _ResultPageState extends State<ResultPage> {
     final analysis = _analysis;
     final advice = _advice;
     final structured = _structured?.result;
-    final canUseResult = structured?.ok == true;
+    final canUseResult = structured != null;
     final legacyActions = advice?.next48hActions ?? const [];
     final hasStructuredActions = structured != null &&
         (structured.actionsToday.diet.isNotEmpty ||
@@ -397,10 +397,19 @@ class _ResultPageState extends State<ResultPage> {
             structured.actionsToday.observe.isNotEmpty);
     final useLegacyActions =
         structured != null && !hasStructuredActions && legacyActions.isNotEmpty;
-    final isLowConfidence = structured != null &&
-        structured.ok &&
-        (structured.analysisConfidence < 0.5 ||
-            structured.imageValidationStatus == 'low_confidence');
+    final showNotice = structured != null &&
+        (structured.analysisMode != 'full' ||
+            structured.imageValidationStatus != 'ok');
+    final noticeTitle = structured?.analysisMode == 'general_advice'
+        ? '未能判断图片内容，提供通用建议'
+        : '识别置信度较低，以下为参考分析';
+    final noticeItems = structured == null
+        ? const <String>[]
+        : [
+            if (structured.uncertaintyNote.isNotEmpty)
+              structured.uncertaintyNote,
+            ...structured.imageValidationTips,
+          ].where((item) => item.trim().isNotEmpty).toList();
 
     return AppScaffold(
       title: l10n.resultTitle,
@@ -428,21 +437,16 @@ class _ResultPageState extends State<ResultPage> {
                   style: UiText.body,
                 ),
               ),
-            ] else if (!structured.ok) ...[
-              AppCard(
-                child: Text(
-                  l10n.resultInsufficientMessage,
-                  style: UiText.body,
-                ),
-              ),
             ] else ...[
-              if (isLowConfidence)
+              if (showNotice)
                 NoticeBanner(
-                  title: '识别置信度较低，以下为参考分析',
-                  items: const ['建议下次拍更近更清晰'],
+                  title: noticeTitle,
+                  items: noticeItems.isNotEmpty
+                      ? noticeItems
+                      : const ['建议下次拍更近更清晰'],
                   color: UiColors.riskMedium,
                 ),
-              if (isLowConfidence) const SizedBox(height: UiSpacing.md),
+              if (showNotice) const SizedBox(height: UiSpacing.md),
               ..._buildDoctorReport(
                 context,
                 structured,
@@ -986,8 +990,8 @@ class _ResultPageState extends State<ResultPage> {
       longform.reassure,
       fallback: '如果精神好、吃得下、睡得稳、次数不多，大多属于可观察型。',
     );
-    final showGuidance = structured.analysisConfidence < 0.5 ||
-        structured.imageValidationStatus == 'low_confidence';
+    final showGuidance = structured.analysisMode != 'full' ||
+        structured.imageValidationStatus != 'ok';
 
     final canDo = [
       ...structured.actionsToday.diet,

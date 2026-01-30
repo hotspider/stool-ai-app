@@ -22,8 +22,10 @@ class StoolAnalysisResult {
   final String riskLevel;
   final double confidence;
   final double analysisConfidence;
+  final String analysisMode;
   final String uncertaintyNote;
   final String imageValidationStatus;
+  final List<String> imageValidationTips;
   final StoolFeatures stoolFeatures;
   final DoctorExplanation doctorExplanation;
   final List<PossibleCause> possibleCauses;
@@ -53,8 +55,10 @@ class StoolAnalysisResult {
     required this.riskLevel,
     required this.confidence,
     required this.analysisConfidence,
+    required this.analysisMode,
     required this.uncertaintyNote,
     required this.imageValidationStatus,
+    required this.imageValidationTips,
     required this.stoolFeatures,
     required this.doctorExplanation,
     required this.possibleCauses,
@@ -148,13 +152,23 @@ class StoolAnalysisResult {
     final riskLevel = _string('risk_level', fallback: 'low');
     final confidence = _double('confidence');
     final analysisConfidence =
-        _double('analysis_confidence', fallback: confidence);
+        _double('analysis_confidence', fallback: 0.4);
+    final analysisModeRaw = json['analysis_mode']?.toString() ?? '';
+    final analysisMode = ['full', 'low_confidence', 'general_advice']
+            .contains(analysisModeRaw)
+        ? analysisModeRaw
+        : 'low_confidence';
     final uncertaintyNote = _string('uncertainty_note');
     String imageValidationStatus = '';
+    List<String> imageValidationTips = const [];
     final imageValidation = json['image_validation'];
     if (imageValidation is Map) {
       imageValidationStatus =
           imageValidation['status']?.toString() ?? '';
+      final tips = imageValidation['tips'];
+      if (tips is List) {
+        imageValidationTips = tips.map((e) => e.toString()).toList();
+      }
     }
     final isStoolImage = json['is_stool_image'] != false;
     final explanation = json['explanation']?.toString() ?? '';
@@ -202,8 +216,7 @@ class StoolAnalysisResult {
       missing,
     );
     final reasoningBullets = _list('reasoning_bullets');
-    final actionsTodayRaw = ActionsToday.parse(_map('actions_today'), missing);
-    final actionsToday = actionsTodayRaw.withDefaults();
+    final actionsToday = ActionsToday.parse(_map('actions_today'), missing);
     final redFlags =
         RedFlagItem.parseList(_listOfMaps(json, 'red_flags', missing));
     final followUpQuestions = _list('follow_up_questions');
@@ -213,13 +226,8 @@ class StoolAnalysisResult {
     final bristolType = stoolFeatures.bristolType;
     final color = stoolFeatures.color;
     final texture = stoolFeatures.texture;
-    final hydrationHint = _string('hydration_hint',
-        fallback: actionsToday.hydration.isNotEmpty
-            ? actionsToday.hydration.first
-            : '');
-    final dietAdvice = _list('diet_advice').isNotEmpty
-        ? _list('diet_advice')
-        : actionsToday.diet;
+    final hydrationHint = _string('hydration_hint', fallback: '');
+    final dietAdvice = _list('diet_advice');
 
     if (missing.isNotEmpty) {
       debugPrint(
@@ -239,8 +247,10 @@ class StoolAnalysisResult {
         riskLevel: riskLevel,
         confidence: confidence,
         analysisConfidence: analysisConfidence,
+        analysisMode: analysisMode,
         uncertaintyNote: uncertaintyNote,
         imageValidationStatus: imageValidationStatus,
+        imageValidationTips: imageValidationTips,
         stoolFeatures: stoolFeatures,
         doctorExplanation: doctorExplanation,
         possibleCauses: possibleCauses,
@@ -311,14 +321,14 @@ class StoolFeatures {
 
   const StoolFeatures.empty()
       : bristolType = null,
-        color = null,
-        texture = null,
-        shape = '',
-        colorLabel = '',
+        color = 'unknown',
+        texture = 'unknown',
+        shape = 'unknown',
+        colorLabel = 'unknown',
         colorReason = '',
-        textureLabel = '',
+        textureLabel = 'unknown',
         abnormalSigns = const [],
-        bristolRange = '',
+        bristolRange = 'unknown',
         shapeDesc = '',
         colorDesc = '',
         textureDesc = '',
@@ -341,12 +351,15 @@ class StoolFeatures {
       missing.add('stool_features.bristol_type');
     }
 
-    final shape = json['shape']?.toString() ?? '';
-    if (shape.isEmpty) missing.add('stool_features.shape');
-    final colorLabel = json['color']?.toString() ?? '';
-    if (colorLabel.isEmpty) missing.add('stool_features.color');
-    final textureLabel = json['texture']?.toString() ?? '';
-    if (textureLabel.isEmpty) missing.add('stool_features.texture');
+    final shapeRaw = json['shape']?.toString() ?? '';
+    final shape = shapeRaw.isNotEmpty ? shapeRaw : 'unknown';
+    if (shapeRaw.isEmpty) missing.add('stool_features.shape');
+    final colorLabelRaw = json['color']?.toString() ?? '';
+    final colorLabel = colorLabelRaw.isNotEmpty ? colorLabelRaw : 'unknown';
+    if (colorLabelRaw.isEmpty) missing.add('stool_features.color');
+    final textureLabelRaw = json['texture']?.toString() ?? '';
+    final textureLabel = textureLabelRaw.isNotEmpty ? textureLabelRaw : 'unknown';
+    if (textureLabelRaw.isEmpty) missing.add('stool_features.texture');
     final colorReason = json['color_reason']?.toString() ?? '';
     if (colorReason.isEmpty) missing.add('stool_features.color_reason');
     final abnormalSignsRaw = json['abnormal_signs'];
@@ -389,8 +402,8 @@ class StoolFeatures {
 
     return StoolFeatures(
       bristolType: bristolType,
-      color: colorDesc,
-      texture: textureDesc,
+      color: (colorDesc ?? '').isNotEmpty ? colorDesc : 'unknown',
+      texture: (textureDesc ?? '').isNotEmpty ? textureDesc : 'unknown',
       shape: shape,
       colorLabel: colorLabel,
       colorReason: colorReason,
@@ -548,21 +561,11 @@ class ActionsToday {
 
   ActionsToday withDefaults() {
     return ActionsToday(
-      diet: diet.isEmpty
-          ? const ['清淡饮食，减少油腻与刺激性食物', '少量多餐，观察耐受情况', '适量软熟蔬果补充']
-          : diet,
-      hydration: hydration.isEmpty
-          ? const ['少量多次补液，避免一次性大量饮水', '观察尿量与尿色变化', '必要时口服补液盐']
-          : hydration,
-      care: care.isEmpty
-          ? const ['勤更换尿布/清洁，保持干爽', '观察皮肤是否红肿或破损', '记录排便次数与性状变化']
-          : care,
-      avoid: avoid.isEmpty
-          ? const ['避免高糖/高脂/刺激性食物', '减少冰冷饮品', '避免一次性大量进食']
-          : avoid,
-      observe: observe.isEmpty
-          ? const ['精神与食欲是否下降', '排便次数是否增多', '是否伴随发热或呕吐']
-          : observe,
+      diet: diet,
+      hydration: hydration,
+      care: care,
+      avoid: avoid,
+      observe: observe,
     );
   }
 }
