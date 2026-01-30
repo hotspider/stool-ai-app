@@ -286,8 +286,19 @@ class _PreviewPageState extends State<PreviewPage> {
       return;
     }
     if (_validation != null && _validation!.ok == false) {
-      await _showQualityDialog(_validation!.reason);
-      return;
+      if (_validation!.reason == ImageValidationReason.tooSmall) {
+        final proceed =
+            await _showQualityDialog(_validation!.reason, allowProceed: true);
+        if (!proceed) {
+          return;
+        }
+        if (mounted) {
+          setState(() => _userConfirmedStool = true);
+        }
+      } else {
+        await _showQualityDialog(_validation!.reason);
+        return;
+      }
     }
     debugPrint(
       'Preview analyze: bytes=${_bytes?.length ?? 0}, validation=${_validation?.reason}, url=${ApiService.baseUrl}/analyze',
@@ -369,17 +380,31 @@ class _PreviewPageState extends State<PreviewPage> {
     }
   }
 
-  Future<void> _showQualityDialog(ImageValidationReason reason) async {
+  Future<bool> _showQualityDialog(
+    ImageValidationReason reason, {
+    bool allowProceed = false,
+  }) async {
     if (!mounted) {
-      return;
+      return false;
     }
     final reasonText = _qualityReasonText(reason);
+    var proceed = false;
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('图片不清晰，建议重拍'),
-        content: Text('原因：$reasonText\n建议：目标占画面 50% 以上'),
+        content: Text(
+          '原因：$reasonText\n建议：目标占画面 50% 以上，优先裁剪/放大目标区域。',
+        ),
         actions: [
+          if (allowProceed)
+            FilledButton(
+              onPressed: () {
+                proceed = true;
+                Navigator.of(context).pop();
+              },
+              child: const Text('仍然继续分析'),
+            ),
           TextButton(
             onPressed: () async {
               Navigator.of(context).pop();
@@ -397,6 +422,7 @@ class _PreviewPageState extends State<PreviewPage> {
         ],
       ),
     );
+    return proceed;
   }
 
   String _qualityReasonText(ImageValidationReason reason) {

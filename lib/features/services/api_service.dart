@@ -54,8 +54,16 @@ class ApiService {
       debugPrint('[ApiService][$requestId] json length: ${jsonBody.length}');
       debugPrint('[ApiService][$requestId] headers: $headers');
       final response = await _postJsonWithRetry(url, jsonBody, headers);
+      final responseRid = response.headers['x-request-id'] ?? 'unknown';
       debugPrint(
         '[ApiService][$requestId] response: ${response.statusCode} ${_snippet(response.body, 300)}',
+      );
+      debugPrint(
+        '[RID:$responseRid] headers: x-request-id=${response.headers['x-request-id']} '
+        'x-worker-git=${response.headers['x-worker-git']} '
+        'x-proxy-version=${response.headers['x-proxy-version']} '
+        'x-openai-model=${response.headers['x-openai-model']} '
+        'schema_version=${response.headers['schema_version']}',
       );
       debugPrint(
         '[ApiService][$requestId] headers: x-worker-version=${response.headers['x-worker-version']} '
@@ -142,6 +150,7 @@ class ApiService {
         'model_used': body['model_used']?.toString(),
         'x-openai-model': response.headers['x-openai-model'],
         'x-worker-version': response.headers['x-worker-version'],
+        'x-worker-git': response.headers['x-worker-git'],
         'x-proxy-version': response.headers['x-proxy-version'],
         'request_id': body['openai_request_id']?.toString() ??
             response.headers['x-request-id'],
